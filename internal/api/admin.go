@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -99,6 +100,7 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	a, err := s.db.PlatformAdminByEmail(r.Context(), req.Email)
 	if err != nil {
+		hash.DummyVerify(req.Password) // equalize timing so a missing admin is indistinguishable
 		httpx.Unauthorized(w, r, "invalid credentials")
 		return
 	}
@@ -161,8 +163,16 @@ func (s *Server) handleAdminMFA(w http.ResponseWriter, r *http.Request) {
 		httpx.Unauthorized(w, r, "mfa not set up")
 		return
 	}
-	if !totp.Verify(a.TOTPSecret, req.Code, time.Now()) {
+	step, ok := totp.VerifyStep(a.TOTPSecret, req.Code, time.Now())
+	if !ok {
 		httpx.Unauthorized(w, r, "invalid code")
+		return
+	}
+	// Single-use per time-step: reject a code that was already accepted within its
+	// validity window so a captured/observed code cannot be replayed (RFC 6238 §5.2).
+	nonce := fmt.Sprintf("adminmfastep:%s:%d", a.AdminID, step)
+	if fresh, err := s.rdb.SetNX(r.Context(), nonce, "1", 2*time.Minute); err == nil && !fresh {
+		httpx.Unauthorized(w, r, "code already used")
 		return
 	}
 	if !a.MFAEnrolled {

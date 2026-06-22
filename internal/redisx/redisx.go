@@ -149,6 +149,12 @@ func (c *Client) SetKV(ctx context.Context, key, val string, ttl time.Duration) 
 	return c.rdb.Set(ctx, key, val, ttl).Err()
 }
 
+// SetNX sets key to val only if it does not already exist, returning true when
+// the key was created. Used as a one-time nonce (e.g. TOTP replay protection).
+func (c *Client) SetNX(ctx context.Context, key, val string, ttl time.Duration) (bool, error) {
+	return c.rdb.SetNX(ctx, key, val, ttl).Result()
+}
+
 // GetKV returns a key's value; ok is false when absent or expired.
 func (c *Client) GetKV(ctx context.Context, key string) (string, bool, error) {
 	v, err := c.rdb.Get(ctx, key).Result()

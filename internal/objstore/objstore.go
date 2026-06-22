@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -126,13 +127,32 @@ func (s *Store) PresignPut(key, contentType string) (string, map[string]string, 
 func (s *Store) PresignGet(key, downloadName string) (string, error) {
 	params := url.Values{}
 	if downloadName != "" {
-		params.Set("response-content-disposition", "inline; filename=\""+downloadName+"\"")
+		// Neutralize quotes/backslashes/control bytes so a hostile display name
+		// cannot break out of the quoted filename in the disposition the object
+		// store echoes back to the browser.
+		params.Set("response-content-disposition", "inline; filename=\""+sanitizeFilename(downloadName)+"\"")
 	}
 	u, err := s.presignClient.PresignedGetObject(context.Background(), s.bucket, key, s.presign, params)
 	if err != nil {
 		return "", err
 	}
 	return u.String(), nil
+}
+
+// sanitizeFilename strips characters that could break out of a quoted filename
+// in a Content-Disposition header (quotes, backslashes, control bytes).
+func sanitizeFilename(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f || r == '"' || r == '\\' {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	if b.Len() == 0 {
+		return "download"
+	}
+	return b.String()
 }
 
 // Get opens an object for range streaming (spec §11/§13). *minio.Object

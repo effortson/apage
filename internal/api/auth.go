@@ -87,6 +87,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := s.db.UserByEmail(r.Context(), req.Email)
 	if err != nil {
+		hash.DummyVerify(req.Password) // equalize timing so an unknown email is indistinguishable
 		httpx.Unauthorized(w, r, "invalid credentials")
 		return
 	}

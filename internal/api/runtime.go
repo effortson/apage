@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -302,7 +303,54 @@ func (s *Server) setDownloadHeaders(w http.ResponseWriter, name string, allowDow
 	if forceAttachment {
 		disp = "attachment"
 	}
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`%s; filename="%s"; filename*=UTF-8''%s`, disp, name, name))
+	w.Header().Set("Content-Disposition", contentDisposition(disp, name))
+}
+
+// contentDisposition builds a Content-Disposition value that a hostile, fully
+// attacker-controlled display name cannot break out of: the quoted ASCII
+// filename has quotes/backslashes/control bytes neutralized, and the UTF-8
+// variant is RFC 5987 percent-encoded. (Go already strips CR/LF from header
+// values, so this guards the quoted-string/parameter layer.)
+func contentDisposition(disp, name string) string {
+	return fmt.Sprintf(`%s; filename="%s"; filename*=UTF-8''%s`, disp, asciiFilename(name), rfc5987Escape(name))
+}
+
+// asciiFilename reduces a name to a safe quoted-string token: non-ASCII,
+// control bytes, quotes and backslashes become '_'.
+func asciiFilename(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if r < 0x20 || r > 0x7e || r == '"' || r == '\\' {
+			b.WriteByte('_')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	if b.Len() == 0 {
+		return "download"
+	}
+	return b.String()
+}
+
+// rfc5987Escape percent-encodes a UTF-8 string for the filename* parameter
+// (RFC 5987 attr-char set).
+func rfc5987Escape(s string) string {
+	const hexd = "0123456789ABCDEF"
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c >= '0' && c <= '9',
+			c == '!', c == '#', c == '$', c == '&', c == '+', c == '-',
+			c == '.', c == '^', c == '_', c == '`', c == '|', c == '~':
+			b.WriteByte(c)
+		default:
+			b.WriteByte('%')
+			b.WriteByte(hexd[c>>4])
+			b.WriteByte(hexd[c&0x0f])
+		}
+	}
+	return b.String()
 }
 
 // --- account / password / unlock helpers ---

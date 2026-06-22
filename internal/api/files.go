@@ -237,6 +237,20 @@ func (s *Server) handleCompleteUpload(w http.ResponseWriter, r *http.Request) {
 		}
 		size = actualSize // authoritative; ignore a spoofed client size
 	}
+	// Re-check the quota against the object's real size. The presigned PUT URL
+	// does not enforce the size promised at /presign, so an oversized object that
+	// would breach the tenant's storage quota is rejected here and its bytes are
+	// scheduled for deletion rather than silently counted (storage-quota bypass).
+	if q, err := s.db.QuotaFor(r.Context(), sc.TenantID); err == nil {
+		if q.StorageBytesUsed+size > q.StorageBytesLimit {
+			_ = s.db.SetFileStatus(r.Context(), fileID, "rejected", "failed", "storage quota exceeded")
+			if f.StorageKey != "" {
+				_ = s.rdb.Enqueue(r.Context(), "delete", f.StorageKey)
+			}
+			httpx.QuotaExceeded(w, r, "storage limit exceeded")
+			return
+		}
+	}
 	if err := s.db.FinalizeUpload(r.Context(), fileID, size); err != nil {
 		httpx.Internal(w, r)
 		return
