@@ -5,15 +5,14 @@ import "context"
 // PurgeResult reports what a data-deletion request removed (spec §15.6).
 type PurgeResult struct {
 	Files       int
-	FileRefs    int
 	Links       int
 	StorageKeys []string // object keys to delete from storage
 }
 
 // PurgeTenantData deletes a tenant's content per a GDPR/CCPA deletion request
-// (spec §15.6): original files, derivatives, preview links, and file-ref
-// mappings. The tenant/users/audit records are retained; object deletion is
-// returned to the caller to enqueue with tombstone+retry (spec §11).
+// (spec §15.6): cloud files and preview links. The tenant/users/audit records
+// are retained; object deletion is returned to the caller to enqueue with
+// tombstone+retry (spec §11).
 func (s *Store) PurgeTenantData(ctx context.Context, tenantID string) (*PurgeResult, error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
@@ -43,13 +42,6 @@ func (s *Store) PurgeTenantData(ctx context.Context, tenantID string) (*PurgeRes
 		return nil, err
 	}
 	res.Links = int(ct.RowsAffected())
-
-	// file_refs belong to instances of the tenant.
-	ct, err = tx.Exec(ctx, `DELETE FROM file_refs WHERE instance_id IN (SELECT instance_id FROM agent_instances WHERE tenant_id=$1)`, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	res.FileRefs = int(ct.RowsAffected())
 
 	ct, err = tx.Exec(ctx, `DELETE FROM files WHERE tenant_id=$1`, tenantID)
 	if err != nil {

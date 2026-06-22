@@ -1,11 +1,45 @@
 "use client";
 import { useEffect, useState } from "react";
 import { adminApi, ApiException } from "@/lib/api";
-import { Card, Banner, Badge, Stat, Button, Input, Table, Td } from "@/components/ui";
 import { relativeTime } from "@/lib/format";
+import { PageHeader, Stat, EmptyState, StatusBadge } from "@/components/composites";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
-type Overview = { tenants: number; onlineInstances: number; activeLinks: number; queues: Record<string, number> };
-type Tenant = { tenantId: string; name: string; plan: string; trustLevel: string; status: string };
+type Overview = {
+  tenants: number;
+  instances: number;
+  activeLinks: number;
+  queues: Record<string, number>;
+};
+type Tenant = {
+  tenantId: string;
+  name: string;
+  plan: string;
+  trustLevel: string;
+  status: string;
+};
 
 export default function Admin() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -19,52 +53,75 @@ export default function Admin() {
       if (e instanceof ApiException && e.status === 401) setAuthed(false);
     }
   }
-  useEffect(() => { loadOverview(); }, []);
+  useEffect(() => {
+    loadOverview();
+  }, []);
 
-  if (authed === null) return <main style={{ padding: 24 }}>Loading…</main>;
+  if (authed === null) {
+    return (
+      <main className="mx-auto max-w-5xl p-6">
+        <Skeleton className="h-8 w-48" />
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 w-full" />
+          ))}
+        </div>
+      </main>
+    );
+  }
   if (!authed) return <AdminLogin onDone={loadOverview} />;
 
   return (
-    <main style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>APAGE Admin</h1>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <Badge tone="danger">internal · MFA</Badge>
-          <Button variant="ghost" onClick={async () => { await adminApi("/auth/logout", { method: "POST" }); setAuthed(false); }}>Sign out</Button>
-        </div>
-      </div>
-      <Banner tone="warning">Internal operations console. IP-allowlisted; all actions are audited and metadata-only.</Banner>
+    <main className="mx-auto max-w-5xl p-6">
+      <PageHeader
+        title="APAGE Admin"
+        actions={
+          <>
+            <Badge variant="destructive">internal · MFA</Badge>
+            <Button
+              variant="ghost"
+              onClick={async () => {
+                await adminApi("/auth/logout", { method: "POST" });
+                setAuthed(false);
+              }}
+            >
+              Sign out
+            </Button>
+          </>
+        }
+      />
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 16, margin: "16px 0 24px" }}>
+      <Alert className="mb-6">
+        <AlertTitle>Internal operations console</AlertTitle>
+        <AlertDescription>
+          IP-allowlisted; all actions are audited and metadata-only.
+        </AlertDescription>
+      </Alert>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Tenants" value={String(overview?.tenants ?? "—")} />
-        <Stat label="Online agents" value={String(overview?.onlineInstances ?? "—")} />
+        <Stat label="Instances" value={String(overview?.instances ?? "—")} />
         <Stat label="Active links" value={String(overview?.activeLinks ?? "—")} />
         <Stat label="Scan queue" value={String(overview?.queues?.scan ?? "—")} />
       </div>
 
-      <AdminTabs />
+      <Tabs defaultValue="tenants" className="mt-6">
+        <TabsList>
+          <TabsTrigger value="tenants">Tenants</TabsTrigger>
+          <TabsTrigger value="abuse">Abuse queue</TabsTrigger>
+          <TabsTrigger value="audit">Global audit</TabsTrigger>
+        </TabsList>
+        <TabsContent value="tenants">
+          <Tenants />
+        </TabsContent>
+        <TabsContent value="abuse">
+          <Abuse />
+        </TabsContent>
+        <TabsContent value="audit">
+          <AuditLog />
+        </TabsContent>
+      </Tabs>
     </main>
-  );
-}
-
-function AdminTabs() {
-  const [tab, setTab] = useState<"tenants" | "abuse" | "audit">("tenants");
-  const tabs: [string, typeof tab][] = [["Tenants", "tenants"], ["Abuse queue", "abuse"], ["Global audit", "audit"]];
-  return (
-    <div>
-      <div role="tablist" style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--color-border)", marginBottom: 16 }}>
-        {tabs.map(([label, key]) => (
-          <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}
-            style={{ background: "none", border: "none", borderBottom: tab === key ? "2px solid var(--color-primary)" : "2px solid transparent",
-              padding: "8px 12px", cursor: "pointer", color: tab === key ? "var(--color-text)" : "var(--color-text-muted)", fontWeight: tab === key ? 600 : 400 }}>
-            {label}
-          </button>
-        ))}
-      </div>
-      {tab === "tenants" && <Tenants />}
-      {tab === "abuse" && <Abuse />}
-      {tab === "audit" && <AuditLog />}
-    </div>
   );
 }
 
@@ -72,37 +129,93 @@ function Abuse() {
   const [items, setItems] = useState<any[]>([]);
   const [status, setStatus] = useState("open");
   async function load() {
-    try { const r = await adminApi<{ items: any[] }>(`/abuse-reports?status=${status}`); setItems(r.items || []); } catch { setItems([]); }
+    try {
+      const r = await adminApi<{ items: any[] }>(`/abuse-reports?status=${status}`);
+      setItems(r.items || []);
+    } catch {
+      setItems([]);
+    }
   }
-  useEffect(() => { load(); }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    load();
+  }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
   async function act(id: string, s: "actioned" | "dismissed") {
     await adminApi(`/abuse-reports/${id}/action`, { method: "POST", body: { status: s } });
     load();
   }
   return (
-    <Card title="Abuse reports">
-      <div style={{ marginBottom: 12 }}>
-        <select value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="open">open</option><option value="actioned">actioned</option><option value="dismissed">dismissed</option><option value="">all</option>
-        </select>
-      </div>
-      <Table head={["Category", "Link", "Detail", "Status", "When", ""]}>
-        {items.map((a) => (
-          <tr key={a.reportId}>
-            <Td><Badge tone="warning">{a.category}</Badge></Td>
-            <Td mono>{a.linkId || "—"}</Td>
-            <Td>{(a.detail || "").slice(0, 80)}</Td>
-            <Td>{a.status}</Td>
-            <Td>{relativeTime(a.createdAt)}</Td>
-            <Td>{a.status === "open" && (
-              <span style={{ display: "flex", gap: 6 }}>
-                <Button size="sm" variant="danger" onClick={() => act(a.reportId, "actioned")}>Action</Button>
-                <Button size="sm" variant="secondary" onClick={() => act(a.reportId, "dismissed")}>Dismiss</Button>
-              </span>
-            )}</Td>
-          </tr>
-        ))}
-      </Table>
+    <Card>
+      <CardHeader>
+        <CardTitle>Abuse reports</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-4">
+          <Select value={status || "all"} onValueChange={(v) => setStatus(v === "all" ? "" : v)}>
+            <SelectTrigger className="h-9 w-[160px]">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="open">open</SelectItem>
+              <SelectItem value="actioned">actioned</SelectItem>
+              <SelectItem value="dismissed">dismissed</SelectItem>
+              <SelectItem value="all">all</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {items.length === 0 ? (
+          <EmptyState title="No abuse reports" hint="Reports matching this filter will appear here." />
+        ) : (
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Link</TableHead>
+                  <TableHead>Detail</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>When</TableHead>
+                  <TableHead className="w-40" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((a) => (
+                  <TableRow key={a.reportId}>
+                    <TableCell>
+                      <Badge variant="warning">{a.category}</Badge>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{a.linkId || "—"}</TableCell>
+                    <TableCell>{(a.detail || "").slice(0, 80)}</TableCell>
+                    <TableCell>{a.status}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {relativeTime(a.createdAt)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {a.status === "open" && (
+                        <span className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => act(a.reportId, "actioned")}
+                          >
+                            Action
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => act(a.reportId, "dismissed")}
+                          >
+                            Dismiss
+                          </Button>
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
     </Card>
   );
 }
@@ -111,26 +224,65 @@ function AuditLog() {
   const [items, setItems] = useState<any[]>([]);
   const [event, setEvent] = useState("");
   async function load() {
-    try { const r = await adminApi<{ items: any[] }>(`/audit-logs?limit=50${event ? `&event=${encodeURIComponent(event)}` : ""}`); setItems(r.items || []); } catch { setItems([]); }
+    try {
+      const r = await adminApi<{ items: any[] }>(
+        `/audit-logs?limit=50${event ? `&event=${encodeURIComponent(event)}` : ""}`,
+      );
+      setItems(r.items || []);
+    } catch {
+      setItems([]);
+    }
   }
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    load();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <Card title="Global audit (cross-tenant)">
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <Input placeholder="event filter, e.g. tenant.suspended" value={event} onChange={(e) => setEvent(e.target.value)} />
-        <Button variant="secondary" onClick={load}>Filter</Button>
-      </div>
-      <Table head={["Event", "Tenant", "Actor", "Resource", "When"]}>
-        {items.map((a) => (
-          <tr key={a.eventId}>
-            <Td mono>{a.event}</Td>
-            <Td mono>{a.tenantId || "—"}</Td>
-            <Td>{a.actorType}</Td>
-            <Td mono>{a.resourceId || "—"}</Td>
-            <Td>{relativeTime(a.createdAt)}</Td>
-          </tr>
-        ))}
-      </Table>
+    <Card>
+      <CardHeader>
+        <CardTitle>Global audit (cross-tenant)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-4 flex gap-2">
+          <Input
+            placeholder="event filter, e.g. tenant.suspended"
+            value={event}
+            onChange={(e) => setEvent(e.target.value)}
+          />
+          <Button variant="secondary" onClick={load}>
+            Filter
+          </Button>
+        </div>
+        {items.length === 0 ? (
+          <EmptyState title="No audit events" hint="Cross-tenant events will appear here." />
+        ) : (
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Event</TableHead>
+                  <TableHead>Tenant</TableHead>
+                  <TableHead>Actor</TableHead>
+                  <TableHead>Resource</TableHead>
+                  <TableHead>When</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((a) => (
+                  <TableRow key={a.eventId}>
+                    <TableCell className="font-mono text-xs">{a.event}</TableCell>
+                    <TableCell className="font-mono text-xs">{a.tenantId || "—"}</TableCell>
+                    <TableCell>{a.actorType}</TableCell>
+                    <TableCell className="font-mono text-xs">{a.resourceId || "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {relativeTime(a.createdAt)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
     </Card>
   );
 }
@@ -144,43 +296,103 @@ function AdminLogin({ onDone }: { onDone: () => void }) {
   const [err, setErr] = useState("");
 
   async function login(e: React.FormEvent) {
-    e.preventDefault(); setErr("");
+    e.preventDefault();
+    setErr("");
     try {
-      const r = await adminApi<{ enrolled: boolean; otpauthUri?: string }>("/auth/login", { method: "POST", body: { email, password } });
+      const r = await adminApi<{ enrolled: boolean; otpauthUri?: string }>("/auth/login", {
+        method: "POST",
+        body: { email, password },
+      });
       if (r.otpauthUri) setOtpauth(r.otpauthUri);
       setStep("mfa");
-    } catch (e) { setErr(e instanceof ApiException ? e.body.message : "Login failed"); }
+    } catch (e) {
+      setErr(e instanceof ApiException ? e.body.message : "Login failed");
+    }
   }
   async function verify(e: React.FormEvent) {
-    e.preventDefault(); setErr("");
-    try { await adminApi("/auth/mfa", { method: "POST", body: { code } }); onDone(); }
-    catch (e) { setErr(e instanceof ApiException ? e.body.message : "Invalid code"); }
+    e.preventDefault();
+    setErr("");
+    try {
+      await adminApi("/auth/mfa", { method: "POST", body: { code } });
+      onDone();
+    } catch (e) {
+      setErr(e instanceof ApiException ? e.body.message : "Invalid code");
+    }
   }
 
   return (
-    <main style={{ maxWidth: 380, margin: "12vh auto", padding: 24 }}>
-      <h1 style={{ textAlign: "center" }}>APAGE Admin</h1>
-      <Badge tone="danger">internal · MFA required</Badge>
-      {step === "login" ? (
-        <form onSubmit={login} style={{ marginTop: 16 }}>
-          <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <Input label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          {err && <div style={{ color: "var(--color-danger)", fontSize: 13, marginBottom: 12 }}>{err}</div>}
-          <Button type="submit" style={{ width: "100%" }}>Continue</Button>
-        </form>
-      ) : (
-        <form onSubmit={verify} style={{ marginTop: 16 }}>
-          {otpauth && (
-            <div style={{ fontSize: 13, color: "var(--color-text-muted)", marginBottom: 12, wordBreak: "break-all" }}>
-              First-time setup: add this to your authenticator app, then enter the code.
-              <code style={{ display: "block", marginTop: 8 }}>{otpauth}</code>
-            </div>
+    <main className="mx-auto max-w-sm px-6 py-[12vh]">
+      <Card>
+        <CardHeader className="text-center">
+          <CardTitle>APAGE Admin</CardTitle>
+          <div className="flex justify-center pt-1">
+            <Badge variant="destructive">internal · MFA required</Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {step === "login" ? (
+            <form onSubmit={login} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+              {err && (
+                <Alert variant="destructive">
+                  <AlertDescription>{err}</AlertDescription>
+                </Alert>
+              )}
+              <Button type="submit" className="w-full">
+                Continue
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={verify} className="space-y-4">
+              {otpauth && (
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  First-time setup: add this to your authenticator app, then enter the code.
+                  <code className="block break-all rounded-md border bg-muted px-3 py-2 font-mono text-xs">
+                    {otpauth}
+                  </code>
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="code">6-digit code</Label>
+                <Input
+                  id="code"
+                  inputMode="numeric"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  required
+                />
+              </div>
+              {err && (
+                <Alert variant="destructive">
+                  <AlertDescription>{err}</AlertDescription>
+                </Alert>
+              )}
+              <Button type="submit" className="w-full">
+                Verify
+              </Button>
+            </form>
           )}
-          <Input label="6-digit code" inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value)} required />
-          {err && <div style={{ color: "var(--color-danger)", fontSize: 13, marginBottom: 12 }}>{err}</div>}
-          <Button type="submit" style={{ width: "100%" }}>Verify</Button>
-        </form>
-      )}
+        </CardContent>
+      </Card>
     </main>
   );
 }
@@ -189,10 +401,16 @@ function Tenants() {
   const [items, setItems] = useState<Tenant[]>([]);
   const [q, setQ] = useState("");
   async function load() {
-    try { const r = await adminApi<{ items: Tenant[] }>(`/tenants${q ? `?q=${encodeURIComponent(q)}` : ""}`); setItems(r.items || []); }
-    catch { setItems([]); }
+    try {
+      const r = await adminApi<{ items: Tenant[] }>(`/tenants${q ? `?q=${encodeURIComponent(q)}` : ""}`);
+      setItems(r.items || []);
+    } catch {
+      setItems([]);
+    }
   }
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    load();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function act(t: Tenant, action: "suspend" | "restore") {
     if (!confirm(`${action} tenant ${t.name}?`)) return;
@@ -205,32 +423,69 @@ function Tenants() {
   }
 
   return (
-    <Card title="Tenants">
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <Input placeholder="search name / id" value={q} onChange={(e) => setQ(e.target.value)} />
-        <Button variant="secondary" onClick={load}>Search</Button>
-      </div>
-      <Table head={["Name", "Plan", "Trust", "Status", "Actions"]}>
-        {items.map((t) => (
-          <tr key={t.tenantId}>
-            <td>{t.name}</td>
-            <td>{t.plan}</td>
-            <td>
-              <select value={t.trustLevel} onChange={(e) => setTrust(t, e.target.value)}>
-                <option value="new">new</option>
-                <option value="basic">basic</option>
-                <option value="trusted">trusted</option>
-              </select>
-            </td>
-            <td><Badge tone={t.status === "suspended" ? "danger" : "success"}>{t.status}</Badge></td>
-            <td>
-              {t.status === "suspended"
-                ? <Button variant="secondary" onClick={() => act(t, "restore")}>Restore</Button>
-                : <Button variant="danger" onClick={() => act(t, "suspend")}>Suspend</Button>}
-            </td>
-          </tr>
-        ))}
-      </Table>
+    <Card>
+      <CardHeader>
+        <CardTitle>Tenants</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-4 flex gap-2">
+          <Input placeholder="search name / id" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Button variant="secondary" onClick={load}>
+            Search
+          </Button>
+        </div>
+        {items.length === 0 ? (
+          <EmptyState title="No tenants" hint="No tenants match this search." />
+        ) : (
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Plan</TableHead>
+                  <TableHead>Trust</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-28 text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((t) => (
+                  <TableRow key={t.tenantId}>
+                    <TableCell className="font-medium">{t.name}</TableCell>
+                    <TableCell className="capitalize text-muted-foreground">{t.plan}</TableCell>
+                    <TableCell>
+                      <Select value={t.trustLevel} onValueChange={(v) => setTrust(t, v)}>
+                        <SelectTrigger className="h-8 w-[120px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="new">new</SelectItem>
+                          <SelectItem value="basic">basic</SelectItem>
+                          <SelectItem value="trusted">trusted</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={t.status} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {t.status === "suspended" ? (
+                        <Button variant="secondary" size="sm" onClick={() => act(t, "restore")}>
+                          Restore
+                        </Button>
+                      ) : (
+                        <Button variant="destructive" size="sm" onClick={() => act(t, "suspend")}>
+                          Suspend
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
     </Card>
   );
 }

@@ -195,15 +195,15 @@ func (s *Server) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
 	tenants, _ := s.db.CountTenants(r.Context())
-	online, _ := s.db.CountOnlineInstances(r.Context())
+	instances, _ := s.db.CountInstances(r.Context())
 	links, _ := s.db.CountActiveLinks(r.Context())
 	scanQ, _ := s.rdb.QueueLen(r.Context(), "scan")
 	deleteQ, _ := s.rdb.QueueLen(r.Context(), "delete")
 	httpx.JSON(w, http.StatusOK, map[string]any{
-		"tenants":         tenants,
-		"onlineInstances": online,
-		"activeLinks":     links,
-		"queues":          map[string]int64{"scan": scanQ, "delete": deleteQ},
+		"tenants":     tenants,
+		"instances":   instances,
+		"activeLinks": links,
+		"queues":      map[string]int64{"scan": scanQ, "delete": deleteQ},
 	})
 }
 

@@ -8,9 +8,9 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// CreateInstance inserts an instance with hashed credentials (spec §26).
+// CreateInstance inserts an instance with its hashed instance api key (spec §26).
 // Enforces instance_limit inside the transaction.
-func (s *Store) CreateInstance(ctx context.Context, in Instance, tokenHash, keyHash string) error {
+func (s *Store) CreateInstance(ctx context.Context, in Instance, keyHash string) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -29,8 +29,8 @@ func (s *Store) CreateInstance(ctx context.Context, in Instance, tokenHash, keyH
 	}
 	_, err = tx.Exec(ctx,
 		`INSERT INTO agent_instances(instance_id,tenant_id,agent_type,agent_name,subdomain,mode,
-			agent_token_hash,instance_api_key_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
-		in.InstanceID, in.TenantID, in.AgentType, in.AgentName, in.Subdomain, in.Mode, tokenHash, keyHash)
+			instance_api_key_hash) VALUES($1,$2,$3,$4,$5,$6,$7)`,
+		in.InstanceID, in.TenantID, in.AgentType, in.AgentName, in.Subdomain, in.Mode, keyHash)
 	if err != nil {
 		return err
 	}
@@ -48,18 +48,13 @@ func (s *Store) InstanceByID(ctx context.Context, instanceID string) (*Instance,
 	return s.scanInstance(s.Pool.QueryRow(ctx, instanceSelect+` WHERE instance_id=$1`, instanceID))
 }
 
-// InstanceBySubdomain resolves a preview subdomain to its instance (runtime).
-func (s *Store) InstanceBySubdomain(ctx context.Context, subdomain string) (*Instance, error) {
-	return s.scanInstance(s.Pool.QueryRow(ctx, instanceSelect+` WHERE subdomain=$1`, subdomain))
-}
-
-const instanceSelect = `SELECT instance_id,tenant_id,agent_type,agent_name,subdomain,mode,status,
-	COALESCE(agent_version,''),last_seen_at,frozen_at,created_at FROM agent_instances`
+const instanceSelect = `SELECT instance_id,tenant_id,agent_type,agent_name,subdomain,mode,
+	frozen_at,created_at FROM agent_instances`
 
 func (s *Store) scanInstance(row pgx.Row) (*Instance, error) {
 	var in Instance
 	err := row.Scan(&in.InstanceID, &in.TenantID, &in.AgentType, &in.AgentName, &in.Subdomain,
-		&in.Mode, &in.Status, &in.AgentVersion, &in.LastSeenAt, &in.FrozenAt, &in.CreatedAt)
+		&in.Mode, &in.FrozenAt, &in.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -99,29 +94,14 @@ func (s *Store) VerifyInstanceAPIKey(ctx context.Context, keyHash string) (*Inst
 		instanceSelect+` WHERE instance_api_key_hash=$1 OR token_grace_hash=$1`, keyHash))
 }
 
-// VerifyAgentToken resolves an instance by agent-token hash (tunnel auth).
-func (s *Store) VerifyAgentToken(ctx context.Context, tokenHash string) (*Instance, error) {
-	return s.scanInstance(s.Pool.QueryRow(ctx,
-		instanceSelect+` WHERE agent_token_hash=$1`, tokenHash))
-}
-
-// SetInstanceStatus updates status + last_seen + version on connect/disconnect.
-func (s *Store) SetInstanceStatus(ctx context.Context, instanceID, status, version string) error {
-	_, err := s.Pool.Exec(ctx,
-		`UPDATE agent_instances SET status=$2, last_seen_at=now(),
-		   agent_version=COALESCE(NULLIF($3,''),agent_version) WHERE instance_id=$1`,
-		instanceID, status, version)
-	return err
-}
-
-// RotateCredentials installs new credential hashes, keeping the old api key as a
-// grace-period key (spec §凭证生命周期 / §26).
-func (s *Store) RotateCredentials(ctx context.Context, instanceID, newTokenHash, newKeyHash string) error {
+// RotateCredentials installs a new instance api key, keeping the old key as a
+// grace-period key so in-flight callers are not cut off (spec §凭证生命周期 / §26).
+func (s *Store) RotateCredentials(ctx context.Context, instanceID, newKeyHash string) error {
 	ct, err := s.Pool.Exec(ctx,
 		`UPDATE agent_instances
 		 SET token_grace_hash = instance_api_key_hash,
-		     agent_token_hash=$2, instance_api_key_hash=$3 WHERE instance_id=$1`,
-		instanceID, newTokenHash, newKeyHash)
+		     instance_api_key_hash=$2 WHERE instance_id=$1`,
+		instanceID, newKeyHash)
 	if err != nil {
 		return err
 	}
@@ -129,13 +109,6 @@ func (s *Store) RotateCredentials(ctx context.Context, instanceID, newTokenHash,
 		return ErrNotFound
 	}
 	return nil
-}
-
-// RevokeAgentToken invalidates the agent token immediately (spec §26).
-func (s *Store) RevokeAgentToken(ctx context.Context, instanceID string) error {
-	_, err := s.Pool.Exec(ctx,
-		`UPDATE agent_instances SET agent_token_hash='revoked:'||instance_id WHERE instance_id=$1`, instanceID)
-	return err
 }
 
 // DeleteInstance removes an instance (cascades links via FK).
@@ -148,7 +121,7 @@ func (s *Store) DeleteInstance(ctx context.Context, instanceID string) error {
 // Tenant-scoped; the bool reports whether a matching instance was affected.
 func (s *Store) FreezeInstance(ctx context.Context, tenantID, instanceID string) (bool, error) {
 	tag, err := s.Pool.Exec(ctx,
-		`UPDATE agent_instances SET frozen_at=now(), status='offline'
+		`UPDATE agent_instances SET frozen_at=now()
 		 WHERE instance_id=$1 AND tenant_id=$2 AND frozen_at IS NULL`, instanceID, tenantID)
 	return tag.RowsAffected() > 0, err
 }

@@ -9,32 +9,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// --- File refs (tunnel, spec §2) ---
-
-// UpsertFileRef stores a tunnel file ref reported by an agent (spec §6.4).
-func (s *Store) UpsertFileRef(ctx context.Context, f FileRef) error {
-	_, err := s.Pool.Exec(ctx,
-		`INSERT INTO file_refs(file_ref,instance_id,display_name,size,mime_type,modified_at,expires_at)
-		 VALUES($1,$2,$3,$4,$5,$6,$7)
-		 ON CONFLICT (file_ref) DO UPDATE SET display_name=EXCLUDED.display_name,
-		   size=EXCLUDED.size, mime_type=EXCLUDED.mime_type, expires_at=EXCLUDED.expires_at`,
-		f.FileRef, f.InstanceID, f.DisplayName, f.Size, f.MimeType, f.ModifiedAt, f.ExpiresAt)
-	return err
-}
-
-// FileRefByID loads a file ref.
-func (s *Store) FileRefByID(ctx context.Context, ref string) (*FileRef, error) {
-	var f FileRef
-	err := s.Pool.QueryRow(ctx,
-		`SELECT file_ref,instance_id,display_name,size,COALESCE(mime_type,''),modified_at,expires_at,created_at
-		 FROM file_refs WHERE file_ref=$1`, ref).
-		Scan(&f.FileRef, &f.InstanceID, &f.DisplayName, &f.Size, &f.MimeType, &f.ModifiedAt, &f.ExpiresAt, &f.CreatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	return &f, err
-}
-
 // --- Cloud files (spec §11) ---
 
 const fileSelect = `SELECT file_id,tenant_id,COALESCE(instance_id,''),status,preview_status,

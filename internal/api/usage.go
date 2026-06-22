@@ -27,7 +27,6 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		"metrics": map[string]any{
 			"instances":     metric(int64(countUsed(s, r, au.TenantID)), int64(q.InstanceLimit)),
 			"storageBytes":  metric(q.StorageBytesUsed, q.StorageBytesLimit),
-			"tunnelEgress":  metric(q.TunnelEgressUsed, q.TunnelEgressLimit),
 			"cloudEgress":   metric(q.CloudEgressUsed, q.CloudEgressLimit),
 			"customDomains": metric(int64(q.CustomDomainUsed), int64(q.CustomDomainLimit)),
 		},
@@ -94,7 +93,6 @@ func (s *Server) handleBilling(w http.ResponseWriter, r *http.Request) {
 		"periodEnd":   q.PeriodStart.AddDate(0, 1, 0),
 		"usage": map[string]any{
 			"storageBytes": metric(q.StorageBytesUsed, q.StorageBytesLimit),
-			"tunnelEgress": metric(q.TunnelEgressUsed, q.TunnelEgressLimit),
 			"cloudEgress":  metric(q.CloudEgressUsed, q.CloudEgressLimit),
 		},
 		"upgradeOptions": planUpgrades(q.Plan),

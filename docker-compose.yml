@@ -1,5 +1,5 @@
-# APAGE MVP single-box stack (spec §22.2/§22.4 Phase 0/1).
-# api + gateway + worker + postgres + redis + minio + caddy.
+# APAGE MVP single-box stack (spec §22.2/§22.4 Phase 0/1), cloud-only.
+# api + worker + postgres + redis + minio + caddy.
 
 services:
   postgres:
@@ -63,29 +63,14 @@ services:
       APP_BASE_DOMAIN: preview.localhost
       APP_CONSOLE_DOMAIN: console.localhost
       APP_RENDER_DOMAIN: render.preview.localhost
-      GATEWAY_INTERNAL_URL: http://gateway:8090
-      # Shared API<->gateway secret for the internal stream endpoint. Override for
-      # any real deployment; the anchor shares it with the gateway/worker.
-      GATEWAY_INTERNAL_SECRET: dev-internal-secret-change-me
       JWT_SIGNING_SECRET: dev-jwt-secret-change-me
       SESSION_SECRET: dev-session-secret-change-me
       API_ADDR: ":8080"
-      GATEWAY_ADDR: ":8090"
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       minio: { condition: service_healthy }
     ports: ["8080:8080"]
-
-  gateway:
-    build:
-      context: .
-      args: { SERVICE: gateway }
-    environment: *svcenv
-    depends_on:
-      postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
-    ports: ["8090:8090"]
 
   worker:
     build:
@@ -102,7 +87,7 @@ services:
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddydata:/data
-    depends_on: [api, gateway]
+    depends_on: [api]
     ports: ["80:80", "443:443"]
 
 volumes:

@@ -9,7 +9,7 @@ import (
 )
 
 // effectiveExpiry implements three-layer expiry (spec §11): the valid window is
-// the earliest of the link, the backing file/file_ref, and now. Returns the
+// the earliest of the link, the backing file, and now. Returns the
 // earliest non-nil expiry.
 func effectiveExpiry(link *time.Time, backing *time.Time) *time.Time {
 	switch {

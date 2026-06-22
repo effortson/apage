@@ -9,14 +9,12 @@ import (
 // usageQuotaColumn maps a metering dimension to its cumulative quotas column.
 var usageQuotaColumn = map[string]string{
 	"storage_bytes": "storage_bytes_used",
-	"tunnel_egress": "tunnel_egress_used",
 	"cloud_egress":  "cloud_egress_used",
 }
 
 // usageDailyColumn maps a metering dimension to its usage_daily column.
 var usageDailyColumn = map[string]string{
 	"storage_bytes": "storage_bytes",
-	"tunnel_egress": "tunnel_egress",
 	"cloud_egress":  "cloud_egress",
 }
 
@@ -49,7 +47,6 @@ func (s *Store) AddUsageDaily(ctx context.Context, tenantID, dim string, delta i
 type UsageDailyRow struct {
 	Day          time.Time `json:"day"`
 	StorageBytes int64     `json:"storageBytes"`
-	TunnelEgress int64     `json:"tunnelEgress"`
 	CloudEgress  int64     `json:"cloudEgress"`
 }
 
@@ -59,7 +56,7 @@ func (s *Store) ListUsageDaily(ctx context.Context, tenantID string, days int) (
 		days = 30
 	}
 	rows, err := s.Pool.Query(ctx,
-		`SELECT day, storage_bytes, tunnel_egress, cloud_egress
+		`SELECT day, storage_bytes, cloud_egress
 		 FROM usage_daily WHERE tenant_id=$1 AND day >= CURRENT_DATE - $2::int
 		 ORDER BY day ASC`, tenantID, days)
 	if err != nil {
@@ -69,7 +66,7 @@ func (s *Store) ListUsageDaily(ctx context.Context, tenantID string, days int) (
 	var out []UsageDailyRow
 	for rows.Next() {
 		var u UsageDailyRow
-		if err := rows.Scan(&u.Day, &u.StorageBytes, &u.TunnelEgress, &u.CloudEgress); err != nil {
+		if err := rows.Scan(&u.Day, &u.StorageBytes, &u.CloudEgress); err != nil {
 			return nil, err
 		}
 		out = append(out, u)

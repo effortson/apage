@@ -5,12 +5,11 @@ import "testing"
 // strongCfg is a production config with all secrets set to non-default values.
 func strongCfg() *Config {
 	return &Config{
-		Environment:           "production",
-		SessionSecret:         "a-strong-session-secret",
-		JWTSigningSecret:      "a-strong-jwt-secret",
-		S3AccessKey:           "real-access-key",
-		S3SecretKey:           "real-secret-key",
-		GatewayInternalSecret: "a-strong-internal-secret",
+		Environment:      "production",
+		SessionSecret:    "a-strong-session-secret",
+		JWTSigningSecret: "a-strong-jwt-secret",
+		S3AccessKey:      "real-access-key",
+		S3SecretKey:      "real-secret-key",
 	}
 }
 
@@ -19,14 +18,6 @@ func TestValidate_ProductionRejectsDefaults(t *testing.T) {
 	c.SessionSecret = "dev-session-secret-change-me"
 	if err := c.Validate(); err == nil {
 		t.Fatal("expected production validation to reject the default session secret")
-	}
-}
-
-func TestValidate_ProductionRequiresGatewaySecret(t *testing.T) {
-	c := strongCfg()
-	c.GatewayInternalSecret = ""
-	if err := c.Validate(); err == nil {
-		t.Fatal("expected production validation to require GATEWAY_INTERNAL_SECRET")
 	}
 }
 
@@ -45,11 +36,12 @@ func TestValidate_ProductionAcceptsStrongSecrets(t *testing.T) {
 }
 
 func TestValidate_ProductionAllowsEmptyS3(t *testing.T) {
-	// Tunnel-only production deploys use no cloud storage; empty S3 creds are OK.
+	// Validate() only rejects the known-dangerous minioadmin default; empty creds
+	// pass here (object-storage presence is enforced at api startup, not in Validate).
 	c := strongCfg()
 	c.S3AccessKey, c.S3SecretKey = "", ""
 	if err := c.Validate(); err != nil {
-		t.Fatalf("empty S3 creds must be allowed in production, got %v", err)
+		t.Fatalf("empty S3 creds must pass Validate, got %v", err)
 	}
 }
 

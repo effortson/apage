@@ -6,7 +6,6 @@ package redisx
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -115,67 +114,6 @@ func (c *Client) RateLimit(ctx context.Context, key string, limit int, window ti
 		Limit:     limit,
 		ResetUnix: reset,
 	}, nil
-}
-
-// --- Agent session registry (spec §19.4) ---
-
-// AgentReg is a live agent registration as seen by the API (spec §19.4).
-type AgentReg struct {
-	GatewayID       string
-	GatewayURL      string
-	SessionID       string
-	ProtocolVersion string
-	Allowlist       []string
-}
-
-// RegisterAgent records a live agent registration with a TTL strictly below the
-// offline timeout (spec §19.4). gatewayURL routes previews to the owning gateway;
-// protocolVersion/allowlist are the agent's actually-reported values.
-func (c *Client) RegisterAgent(ctx context.Context, instanceID string, reg AgentReg, ttl time.Duration) error {
-	key := "agent:" + instanceID
-	allow, _ := json.Marshal(reg.Allowlist)
-	if err := c.rdb.HSet(ctx, key,
-		"gateway_id", reg.GatewayID,
-		"gateway_url", reg.GatewayURL,
-		"session_id", reg.SessionID,
-		"protocol_version", reg.ProtocolVersion,
-		"allowlist", string(allow),
-		"updated_at", time.Now().Unix(),
-	).Err(); err != nil {
-		return err
-	}
-	// Set the TTL at registration so the key expires even if no refresh follows
-	// (previously the key had no TTL until the first TouchAgent tick).
-	return c.rdb.Expire(ctx, key, ttl).Err()
-}
-
-// TouchAgent refreshes the TTL of an agent registration (heartbeat).
-func (c *Client) TouchAgent(ctx context.Context, instanceID string, ttl time.Duration) error {
-	return c.rdb.Expire(ctx, "agent:"+instanceID, ttl).Err()
-}
-
-// LookupAgent returns the live registration for an instance, if online (§19.4).
-func (c *Client) LookupAgent(ctx context.Context, instanceID string) (AgentReg, bool, error) {
-	m, err := c.rdb.HGetAll(ctx, "agent:"+instanceID).Result()
-	if err != nil {
-		return AgentReg{}, false, err
-	}
-	if len(m) == 0 {
-		return AgentReg{}, false, nil
-	}
-	reg := AgentReg{
-		GatewayID: m["gateway_id"], GatewayURL: m["gateway_url"],
-		SessionID: m["session_id"], ProtocolVersion: m["protocol_version"],
-	}
-	if a := m["allowlist"]; a != "" {
-		_ = json.Unmarshal([]byte(a), &reg.Allowlist)
-	}
-	return reg, true, nil
-}
-
-// UnregisterAgent removes the mapping when a gateway loses the connection.
-func (c *Client) UnregisterAgent(ctx context.Context, instanceID string) error {
-	return c.rdb.Del(ctx, "agent:"+instanceID).Err()
 }
 
 // --- Idempotency (spec §"幂等") ---

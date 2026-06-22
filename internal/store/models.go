@@ -42,8 +42,6 @@ type Quota struct {
 	InstanceLimit     int       `json:"instanceLimit"`
 	StorageBytesLimit int64     `json:"storageBytesLimit"`
 	StorageBytesUsed  int64     `json:"storageBytesUsed"`
-	TunnelEgressLimit int64     `json:"tunnelEgressLimit"`
-	TunnelEgressUsed  int64     `json:"tunnelEgressUsed"`
 	CloudEgressLimit  int64     `json:"cloudEgressLimit"`
 	CloudEgressUsed   int64     `json:"cloudEgressUsed"`
 	CustomDomainLimit int       `json:"customDomainLimit"`
@@ -51,31 +49,18 @@ type Quota struct {
 	PeriodStart       time.Time `json:"periodStart"`
 }
 
-// Instance (spec §2, §26). Token hashes are never serialized.
+// Instance (spec §2, §26). The instance api-key hash is never serialized.
+// In cloud-only mode an instance is a subdomain + API-key namespace; it no
+// longer tracks a live agent connection.
 type Instance struct {
-	InstanceID   string     `json:"instanceId"`
-	TenantID     string     `json:"tenantId"`
-	AgentType    string     `json:"agentType"`
-	AgentName    string     `json:"agentName"`
-	Subdomain    string     `json:"subdomain"`
-	Mode         string     `json:"mode"`
-	Status       string     `json:"status"`
-	AgentVersion string     `json:"agentVersion"`
-	LastSeenAt   *time.Time `json:"lastSeenAt"`
-	FrozenAt     *time.Time `json:"frozenAt"`
-	CreatedAt    time.Time  `json:"createdAt"`
-}
-
-// FileRef (spec §2 File Ref).
-type FileRef struct {
-	FileRef     string     `json:"fileRef"`
-	InstanceID  string     `json:"instanceId"`
-	DisplayName string     `json:"displayName"`
-	Size        int64      `json:"size"`
-	MimeType    string     `json:"mimeType"`
-	ModifiedAt  *time.Time `json:"modifiedAt"`
-	ExpiresAt   *time.Time `json:"expiresAt"`
-	CreatedAt   time.Time  `json:"createdAt"`
+	InstanceID string     `json:"instanceId"`
+	TenantID   string     `json:"tenantId"`
+	AgentType  string     `json:"agentType"`
+	AgentName  string     `json:"agentName"`
+	Subdomain  string     `json:"subdomain"`
+	Mode       string     `json:"mode"`
+	FrozenAt   *time.Time `json:"frozenAt"`
+	CreatedAt  time.Time  `json:"createdAt"`
 }
 
 // File (spec §11).
@@ -119,7 +104,6 @@ type PreviewLink struct {
 	LinkID         string          `json:"linkId"`
 	TenantID       string          `json:"tenantId"`
 	InstanceID     string          `json:"instanceId"`
-	FileRef        *string         `json:"fileRef,omitempty"`
 	FileID         *string         `json:"fileId,omitempty"`
 	Mode           string          `json:"mode"`
 	DisplayName    string          `json:"displayName"`

@@ -2,161 +2,327 @@
 import { useEffect, useState } from "react";
 import { api, List, ApiException, idemKey } from "@/lib/api";
 import { usePoll } from "@/lib/hooks";
-import { Button, Table, Td, StatusDot, Badge, Drawer, Input, Select, EmptyState, Skeleton, SecretReveal, CopyField, CodeBlock, useToast, ConfirmDialog } from "@/components/ui";
-import { relativeTime } from "@/lib/format";
+import {
+  PageHeader,
+  EmptyState,
+  SecretReveal,
+  CodeBlock,
+} from "@/components/composites";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
+import { toast } from "sonner";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+
+const API_BASE = "https://preview.example.com";
 
 export default function Instances() {
-  const toast = useToast();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
-  const [created, setCreated] = useState<any>(null);
   const [detail, setDetail] = useState<any>(null);
 
-  const load = () => api<List<any>>("/instances?limit=50").then((r) => { setItems(r.items || []); setLoading(false); });
-  useEffect(() => { load().catch(() => setLoading(false)); }, []);
-  usePoll(() => { load().catch(() => {}); }, 5000); // reflect online status ≤5s (UI §4.5)
+  const load = () =>
+    api<List<any>>("/instances?limit=50").then((r) => {
+      setItems(r.items || []);
+      setLoading(false);
+    });
+  useEffect(() => {
+    load().catch(() => setLoading(false));
+  }, []);
+  usePoll(() => {
+    load().catch(() => {});
+  }, 5000);
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-        <h1>Instances</h1>
-        <Button onClick={() => { setCreated(null); setShowAdd(true); }}>Add instance</Button>
-      </div>
+      <PageHeader
+        title="Instances"
+        description="Each instance is a subdomain + API key your agent uses to share files."
+        actions={<Button onClick={() => setShowAdd(true)}>Add instance</Button>}
+      />
 
-      {loading ? <Skeleton rows={4} /> : items.length === 0 ? (
-        <EmptyState title="No instances" hint="Add an instance to connect a preview agent." action={<Button onClick={() => setShowAdd(true)}>Add instance</Button>} />
+      {loading ? (
+        <Skeleton className="h-48 w-full" />
+      ) : items.length === 0 ? (
+        <EmptyState
+          title="No instances"
+          hint="Add an instance, then run apage-cli to connect your agent."
+          action={<Button onClick={() => setShowAdd(true)}>Add instance</Button>}
+        />
       ) : (
-        <Table head={["Name", "Type", "Subdomain", "Mode", "Status", "Version", "Last seen", ""]}>
-          {items.map((i) => (
-            <tr key={i.instanceId}>
-              <Td>{i.agentName}</Td>
-              <Td>{i.agentType}</Td>
-              <Td mono>{i.subdomain}</Td>
-              <Td><Badge tone={i.mode === "tunnel" ? "info" : "muted"}>{i.mode}</Badge></Td>
-              <Td><StatusDot online={i.status === "online"} /></Td>
-              <Td mono>{i.agentVersion || "—"}</Td>
-              <Td>{relativeTime(i.lastSeenAt)}</Td>
-              <Td><Button size="sm" variant="ghost" onClick={() => setDetail(i)}>Details</Button></Td>
-            </tr>
-          ))}
-        </Table>
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Subdomain</TableHead>
+                <TableHead>Mode</TableHead>
+                <TableHead className="w-24" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((i) => (
+                <TableRow key={i.instanceId}>
+                  <TableCell className="font-medium">{i.agentName}</TableCell>
+                  <TableCell className="capitalize text-muted-foreground">{i.agentType}</TableCell>
+                  <TableCell className="font-mono text-xs">{i.subdomain}</TableCell>
+                  <TableCell>
+                    <Badge variant="secondary">{i.mode}</Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="ghost" size="sm" onClick={() => setDetail(i)}>
+                      Details
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
-      {showAdd && (
-        <AddInstance onClose={() => setShowAdd(false)} created={created}
-          onCreated={(c) => { setCreated(c); load(); toast({ tone: "success", msg: "Instance created" }); }} />
-      )}
-      {detail && <InstanceDetail instance={detail} onClose={() => setDetail(null)} onChange={load} />}
+      <AddInstance open={showAdd} onOpenChange={setShowAdd} onCreated={() => load()} />
+      <InstanceDetail instance={detail} onOpenChange={(o) => !o && setDetail(null)} />
     </div>
   );
 }
 
-function AddInstance({ onClose, onCreated, created }: { onClose: () => void; onCreated: (c: any) => void; created: any }) {
-  const toast = useToast();
-  const [form, setForm] = useState({ agentName: "", subdomain: "", agentType: "openclaw", mode: "tunnel" });
+function AddInstance({
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onCreated: () => void;
+}) {
+  const [form, setForm] = useState({ agentName: "", subdomain: "", agentType: "openclaw" });
+  const [created, setCreated] = useState<any>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Reset the dialog each time it opens.
+  useEffect(() => {
+    if (open) {
+      setForm({ agentName: "", subdomain: "", agentType: "openclaw" });
+      setCreated(null);
+      setErr("");
+    }
+  }, [open]);
+
   async function submit() {
-    setErr(""); setLoading(true);
+    setErr("");
+    setLoading(true);
     try {
-      const c = await api("/instances", { method: "POST", body: form, idempotencyKey: idemKey("inst") });
-      onCreated(c);
-    } catch (e) { setErr(e instanceof ApiException ? e.body.message : "Failed"); toast({ tone: "danger", msg: "Create failed" }); }
-    finally { setLoading(false); }
+      const c = await api<any>("/instances", {
+        method: "POST",
+        body: form,
+        idempotencyKey: idemKey("inst"),
+      });
+      setCreated(c);
+      onCreated();
+      toast.success("Instance created");
+    } catch (e) {
+      setErr(e instanceof ApiException ? e.body.message : "Failed");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <Drawer title={created ? "Instance created" : "Add instance"} onClose={onClose}>
-      {created ? (
-        <div>
-          <p>Save these credentials now — they are shown only once.</p>
-          <h3 style={{ marginTop: 16 }}>Agent token</h3>
-          <SecretReveal value={created.agentToken} />
-          <h3 style={{ marginTop: 16 }}>Instance API key</h3>
-          <SecretReveal value={created.instanceApiKey} />
-          <h3 style={{ marginTop: 16 }}>Install & start</h3>
-          <CodeBlock>{`apage-agent init --instance ${form.subdomain || created.subdomain} --agent-type ${form.agentType} --workspace ~/outputs
-apage-agent start --token ${created.agentToken}`}</CodeBlock>
-          <div style={{ marginTop: 16 }}><Button onClick={onClose}>Done</Button></div>
-        </div>
-      ) : (
-        <div>
-          <Input label="Agent name" value={form.agentName} onChange={(e) => setForm({ ...form, agentName: e.target.value })} />
-          <Input label="Subdomain" value={form.subdomain} onChange={(e) => setForm({ ...form, subdomain: e.target.value })} placeholder="alice" />
-          <Select label="Agent type" value={form.agentType} onChange={(e) => setForm({ ...form, agentType: e.target.value })}>
-            <option value="openclaw">OpenClaw</option>
-            <option value="hermes">Hermes</option>
-            <option value="custom">Custom</option>
-          </Select>
-          <Select label="Mode" value={form.mode} onChange={(e) => setForm({ ...form, mode: e.target.value })}>
-            <option value="tunnel">Tunnel</option>
-            <option value="cloud">Cloud</option>
-            <option value="hybrid">Hybrid</option>
-          </Select>
-          {err && <div style={{ color: "var(--color-danger)", fontSize: 13, marginBottom: 12 }}>{err}</div>}
-          <Button loading={loading} onClick={submit}>Create instance</Button>
-        </div>
-      )}
-    </Drawer>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        {created ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Instance created</DialogTitle>
+              <DialogDescription>
+                Save the API key now — it configures apage-cli and is shown only once.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label>Instance API key</Label>
+                <SecretReveal value={created.instanceApiKey} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Connect your agent</Label>
+                <CodeBlock>{`apage-cli init --instance ${created.subdomain || form.subdomain} --workspace ~/outputs --api ${API_BASE} --api-key ${created.instanceApiKey}
+apage-cli mcp`}</CodeBlock>
+                <p className="text-sm text-muted-foreground">
+                  <code className="font-mono">apage-cli mcp</code> starts a local MCP server on{" "}
+                  <code className="font-mono">127.0.0.1:7777</code>; your agent calls its tools to
+                  upload files and create preview links.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={() => onOpenChange(false)}>Done</Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>Add instance</DialogTitle>
+              <DialogDescription>
+                Pick a subdomain; we&apos;ll issue an instance API key for your agent.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="agentName">Agent name</Label>
+                <Input
+                  id="agentName"
+                  value={form.agentName}
+                  onChange={(e) => setForm({ ...form, agentName: e.target.value })}
+                  placeholder="Alice's agent"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="subdomain">Subdomain</Label>
+                <Input
+                  id="subdomain"
+                  value={form.subdomain}
+                  onChange={(e) => setForm({ ...form, subdomain: e.target.value })}
+                  placeholder="alice"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Agent type</Label>
+                <Select
+                  value={form.agentType}
+                  onValueChange={(v) => setForm({ ...form, agentType: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="openclaw">OpenClaw</SelectItem>
+                    <SelectItem value="hermes">Hermes</SelectItem>
+                    <SelectItem value="custom">Custom</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {err && (
+                <Alert variant="destructive">
+                  <AlertDescription>{err}</AlertDescription>
+                </Alert>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button onClick={submit} disabled={loading}>
+                {loading ? "Creating…" : "Create instance"}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function InstanceDetail({ instance, onClose, onChange }: { instance: any; onClose: () => void; onChange: () => void }) {
-  const toast = useToast();
-  const [detail, setDetail] = useState<any>(null);
-  const [confirm, setConfirm] = useState(false);
-  useEffect(() => { api<any>(`/instances/${instance.instanceId}`).then(setDetail).catch(() => {}); }, [instance.instanceId]);
+function InstanceDetail({
+  instance,
+  onOpenChange,
+}: {
+  instance: any;
+  onOpenChange: (o: boolean) => void;
+}) {
+  const [rotated, setRotated] = useState<string | null>(null);
 
+  useEffect(() => {
+    setRotated(null);
+  }, [instance]);
+
+  if (!instance) return null;
   return (
-    <Drawer title={instance.agentName} onClose={onClose}>
-      <div style={{ display: "grid", gap: 8 }}>
-        <Field k="Instance ID" v={instance.instanceId} mono />
-        <Field k="Subdomain" v={instance.subdomain} mono />
-        <Field k="Mode" v={instance.mode} />
-        <Field k="Version" v={instance.agentVersion || "—"} />
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ color: "var(--color-text-muted)" }}>Connection</span>
-          <StatusDot online={detail?.connection?.online} />
-        </div>
-      </div>
-      <h3 style={{ marginTop: 16 }}>Allowlist</h3>
-      <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
-        The allowlist is configured on the customer server and reported by the agent; the console cannot widen it remotely.
-      </p>
-      <Button size="sm" variant="secondary" onClick={async () => {
-        await api(`/instances/${instance.instanceId}/allowlist-change-request`, { method: "POST" });
-        toast({ tone: "info", msg: "Change request generated — confirm on the host" });
-      }}>Request allowlist change</Button>
+    <Sheet open={!!instance} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>{instance.agentName}</SheetTitle>
+          <SheetDescription className="font-mono text-xs">{instance.instanceId}</SheetDescription>
+        </SheetHeader>
 
-      <h3 style={{ marginTop: 24, color: "var(--color-danger)" }}>Danger zone</h3>
-      <div style={{ display: "flex", gap: 8 }}>
-        <Button size="sm" variant="secondary" onClick={async () => {
-          const c = await api<any>(`/instances/${instance.instanceId}/rotate-credentials`, { method: "POST" });
-          toast({ tone: "success", msg: "Rotated — new credentials issued" });
-          alert("New agent token:\n" + c.agentToken + "\n\nNew API key:\n" + c.instanceApiKey);
-        }}>Rotate credentials</Button>
-        <Button size="sm" variant="danger" onClick={() => setConfirm(true)}>Revoke token</Button>
-      </div>
-      {confirm && (
-        <ConfirmDialog title="Revoke agent token" danger confirmWord={instance.subdomain}
-          message="This immediately disconnects the agent and invalidates its token."
-          onCancel={() => setConfirm(false)}
-          onConfirm={async () => {
-            await api(`/instances/${instance.instanceId}/revoke-token`, { method: "POST" });
-            setConfirm(false); onChange(); toast({ tone: "success", msg: "Token revoked (audit logged)" });
-          }} />
-      )}
-    </Drawer>
+        <div className="mt-6 space-y-3 text-sm">
+          <Row k="Subdomain" v={instance.subdomain} mono />
+          <Row k="Type" v={instance.agentType} />
+          <Row k="Mode" v={instance.mode} />
+        </div>
+
+        <Separator className="my-6" />
+
+        <h3 className="text-sm font-semibold text-destructive">Danger zone</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Rotating issues a new instance API key; the previous key keeps working briefly during a
+          grace window.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={async () => {
+            const c = await api<any>(`/instances/${instance.instanceId}/rotate-credentials`, {
+              method: "POST",
+            });
+            setRotated(c.instanceApiKey);
+            toast.success("Rotated — new API key issued");
+          }}
+        >
+          Rotate credentials
+        </Button>
+        {rotated && (
+          <div className="mt-4">
+            <SecretReveal value={rotated} />
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
   );
 }
 
-function Field({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between" }}>
-      <span style={{ color: "var(--color-text-muted)" }}>{k}</span>
-      <span className={mono ? "mono" : ""}>{v}</span>
+    <div className="flex items-center justify-between">
+      <span className="text-muted-foreground">{k}</span>
+      <span className={mono ? "font-mono text-xs" : "capitalize"}>{v}</span>
     </div>
   );
 }

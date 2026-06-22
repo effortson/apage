@@ -1,9 +1,28 @@
 "use client";
 import { useEffect, useState } from "react";
-import { api, List, ApiException, idemKey } from "@/lib/api";
+import { api, List } from "@/lib/api";
 import { usePoll } from "@/lib/hooks";
-import { Button, Table, Td, Badge, Drawer, Input, Select, EmptyState, Skeleton, SecretReveal, useToast, ConfirmDialog, statusTone } from "@/components/ui";
 import { relativeTime, absoluteTime } from "@/lib/format";
+import { PageHeader, EmptyState, StatusBadge, ConfirmDialog } from "@/components/composites";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function linkStatus(l: any): string {
   if (l.frozenAt) return "frozen";
@@ -12,196 +31,176 @@ function linkStatus(l: any): string {
   return "active";
 }
 
-export default function Links() {
-  const toast = useToast();
-  const [items, setItems] = useState<any[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [filter, setFilter] = useState({ status: "", mode: "" });
-  const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const [revoke, setRevoke] = useState<any>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [batchRevoke, setBatchRevoke] = useState(false);
-
-  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-
-  const load = (reset = true) => {
-    const q = new URLSearchParams({ limit: "20" });
-    if (filter.status) q.set("status", filter.status);
-    if (filter.mode) q.set("mode", filter.mode);
-    if (!reset && cursor) q.set("cursor", cursor);
-    return api<List<any>>(`/preview-links?${q}`).then((r) => {
-      setItems(reset ? r.items || [] : [...items, ...(r.items || [])]);
-      setCursor(r.nextCursor); setLoading(false);
-    });
-  };
-  useEffect(() => { setLoading(true); load(true).catch(() => setLoading(false)); /* eslint-disable-next-line */ }, [filter]);
-  usePoll(() => { load(true).catch(() => {}); }, 5000); // revoke/freeze reflects ≤5s (UI §4.5)
-
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-        <h1>Preview Links</h1>
-        <Button onClick={() => setShowCreate(true)}>Create link</Button>
-      </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <Select value={filter.status} onChange={(e) => setFilter({ ...filter, status: e.target.value })}>
-          <option value="">All statuses</option><option value="active">Active</option><option value="revoked">Revoked</option><option value="expired">Expired</option><option value="frozen">Frozen</option>
-        </Select>
-        <Select value={filter.mode} onChange={(e) => setFilter({ ...filter, mode: e.target.value })}>
-          <option value="">All modes</option><option value="tunnel">Tunnel</option><option value="cloud">Cloud</option>
-        </Select>
-        {selected.size > 0 && (
-          <Button variant="danger" onClick={() => setBatchRevoke(true)}>Revoke selected ({selected.size})</Button>
-        )}
-      </div>
-
-      {loading ? <Skeleton rows={5} /> : items.length === 0 ? (
-        <EmptyState title="No preview links" hint="Create a tunnel or cloud preview link." action={<Button onClick={() => setShowCreate(true)}>Create link</Button>} />
-      ) : (
-        <>
-          <Table head={["", "Name", "Link ID", "Mode", "Policy", "Status", "Expires", "Views", ""]}>
-            {items.map((l) => {
-              const st = linkStatus(l);
-              return (
-                <tr key={l.linkId}>
-                  <Td>{st === "active" && <input type="checkbox" aria-label={`select ${l.linkId}`} checked={selected.has(l.linkId)} onChange={() => toggle(l.linkId)} />}</Td>
-                  <Td>{l.displayName || "—"}</Td>
-                  <Td mono>{l.linkId}</Td>
-                  <Td><Badge tone={l.mode === "tunnel" ? "info" : "muted"}>{l.mode}</Badge></Td>
-                  <Td>{policyLabel(l.accessPolicy)}</Td>
-                  <Td><Badge tone={statusTone(st)}>{st}</Badge></Td>
-                  <Td title={absoluteTime(l.expiresAt)}>{relativeTime(l.expiresAt)}</Td>
-                  <Td>{l.viewCount}</Td>
-                  <Td>{st === "active" && <Button size="sm" variant="ghost" onClick={() => setRevoke(l)}>Revoke</Button>}</Td>
-                </tr>
-              );
-            })}
-          </Table>
-          {cursor && <div style={{ marginTop: 12 }}><Button variant="secondary" onClick={() => load(false)}>Load more</Button></div>}
-        </>
-      )}
-
-      {showCreate && <CreateLink onClose={() => setShowCreate(false)} onCreated={() => { load(true); toast({ tone: "success", msg: "Link created" }); }} />}
-      {revoke && (
-        <ConfirmDialog title="Revoke link" danger message={`Revoke "${revoke.displayName || revoke.linkId}"? Visitors will get a 410 within seconds.`}
-          onCancel={() => setRevoke(null)}
-          onConfirm={async () => {
-            await api(`/preview-links/${revoke.linkId}/revoke`, { method: "POST" });
-            setRevoke(null); load(true); toast({ tone: "success", msg: "Revoked (audit logged)" });
-          }} />
-      )}
-      {batchRevoke && (
-        <ConfirmDialog title="Revoke selected links" danger confirmWord="REVOKE"
-          message={`Revoke ${selected.size} selected link(s)? Visitors will get a 410 within seconds. This cannot be undone.`}
-          onCancel={() => setBatchRevoke(false)}
-          onConfirm={async () => {
-            const ids = Array.from(selected);
-            await Promise.allSettled(ids.map((id) => api(`/preview-links/${id}/revoke`, { method: "POST" })));
-            setBatchRevoke(false); setSelected(new Set()); load(true);
-            toast({ tone: "success", msg: `Revoked ${ids.length} link(s) (audit logged)` });
-          }} />
-      )}
-    </div>
-  );
-}
-
-function policyLabel(p: any): React.ReactNode {
+function policyLabel(p: any): string {
   if (!p) return "public";
   const parts = [p.type];
   if (p.singleUse) parts.push("single-use");
   else if (p.maxViews) parts.push(`max ${p.maxViews}`);
   if (p.ipAllowlist?.length) parts.push("ip");
-  return <span style={{ fontSize: 12 }}>{parts.join(" · ")}</span>;
+  return parts.join(" · ");
 }
 
-function CreateLink({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const toast = useToast();
-  const [instances, setInstances] = useState<any[]>([]);
-  const [files, setFiles] = useState<any[]>([]);
-  const [created, setCreated] = useState<any>(null);
-  const [err, setErr] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [f, setF] = useState<any>({
-    mode: "tunnel", instanceId: "", fileRef: "", displayName: "", fileId: "",
-    expiresInSeconds: 3600, type: "public_token", allowDownload: true, maxViews: 0, singleUse: false, password: "", ipAllowlist: "",
-  });
+export default function Links() {
+  const [items, setItems] = useState<any[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [revoke, setRevoke] = useState<any>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchRevoke, setBatchRevoke] = useState(false);
 
+  const toggle = (id: string) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+
+  const load = (reset = true) => {
+    const q = new URLSearchParams({ limit: "20" });
+    if (status) q.set("status", status);
+    if (!reset && cursor) q.set("cursor", cursor);
+    return api<List<any>>(`/preview-links?${q}`).then((r) => {
+      setItems(reset ? r.items || [] : [...items, ...(r.items || [])]);
+      setCursor(r.nextCursor);
+      setLoading(false);
+    });
+  };
   useEffect(() => {
-    api<List<any>>("/instances?limit=50").then((r) => { setInstances(r.items || []); if (r.items?.[0]) setF((p: any) => ({ ...p, instanceId: r.items[0].instanceId })); });
-    api<List<any>>("/files?status=ready&limit=50").then((r) => setFiles(r.items || []));
-  }, []);
-
-  async function submit() {
-    setErr(""); setLoading(true);
-    const body: any = {
-      mode: f.mode, expiresInSeconds: Number(f.expiresInSeconds),
-      displayName: f.displayName,
-      accessPolicy: {
-        type: f.type, allowDownload: f.allowDownload,
-        maxViews: Number(f.maxViews) || 0, singleUse: f.singleUse,
-        ipAllowlist: f.ipAllowlist ? f.ipAllowlist.split(",").map((s: string) => s.trim()).filter(Boolean) : [],
-      },
-    };
-    if (f.password) body.password = f.password;
-    if (f.mode === "tunnel") { body.instanceId = f.instanceId; body.fileRef = f.fileRef; }
-    else { body.fileId = f.fileId; }
-    try {
-      const c = await api("/preview-links", { method: "POST", body, idempotencyKey: idemKey("link") });
-      setCreated(c); onCreated();
-    } catch (e) { setErr(e instanceof ApiException ? e.body.message : "Failed"); }
-    finally { setLoading(false); }
-  }
+    setLoading(true);
+    load(true).catch(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+  usePoll(() => {
+    load(true).catch(() => {});
+  }, 5000);
 
   return (
-    <Drawer title={created ? "Link created" : "Create preview link"} onClose={onClose}>
-      {created ? (
-        <div>
-          <p>Share this URL. It contains the secret and is shown only once.</p>
-          <SecretReveal value={created.url} />
-          <p style={{ fontSize: 13, color: "var(--color-text-muted)", marginTop: 12 }}>Expires: {absoluteTime(created.expiresAt)}</p>
-          <Button onClick={onClose} style={{ marginTop: 12 }}>Done</Button>
-        </div>
+    <div>
+      <PageHeader
+        title="Preview Links"
+        description="Created by your agent via MCP. View, revoke, or freeze them here."
+      />
+
+      <div className="mb-4 flex items-center gap-2">
+        <Select value={status || "all"} onValueChange={(v) => setStatus(v === "all" ? "" : v)}>
+          <SelectTrigger className="h-9 w-[160px]">
+            <SelectValue placeholder="All statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="revoked">Revoked</SelectItem>
+            <SelectItem value="expired">Expired</SelectItem>
+            <SelectItem value="frozen">Frozen</SelectItem>
+          </SelectContent>
+        </Select>
+        {selected.size > 0 && (
+          <Button variant="destructive" onClick={() => setBatchRevoke(true)}>
+            Revoke selected ({selected.size})
+          </Button>
+        )}
+      </div>
+
+      {loading ? (
+        <Skeleton className="h-64 w-full" />
+      ) : items.length === 0 ? (
+        <EmptyState title="No preview links" hint="Links are created by your agent via MCP." />
       ) : (
-        <div>
-          <Select label="Mode" value={f.mode} onChange={(e) => setF({ ...f, mode: e.target.value })}>
-            <option value="tunnel">Tunnel (file on your server)</option>
-            <option value="cloud">Cloud (uploaded file)</option>
-          </Select>
-          {f.mode === "tunnel" ? (
-            <>
-              <Select label="Instance" value={f.instanceId} onChange={(e) => setF({ ...f, instanceId: e.target.value })}>
-                {instances.map((i) => <option key={i.instanceId} value={i.instanceId}>{i.agentName} ({i.subdomain})</option>)}
-              </Select>
-              <Input label="File ref (from local register)" value={f.fileRef} onChange={(e) => setF({ ...f, fileRef: e.target.value })} placeholder="fref_..." />
-              <Input label="Display name" value={f.displayName} onChange={(e) => setF({ ...f, displayName: e.target.value })} />
-            </>
-          ) : (
-            <Select label="Ready file" value={f.fileId} onChange={(e) => setF({ ...f, fileId: e.target.value })}>
-              <option value="">Select a ready file…</option>
-              {files.map((x) => <option key={x.fileId} value={x.fileId}>{x.displayName}</option>)}
-            </Select>
+        <>
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10" />
+                  <TableHead>Name</TableHead>
+                  <TableHead>Link ID</TableHead>
+                  <TableHead>Policy</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Expires</TableHead>
+                  <TableHead className="text-right">Views</TableHead>
+                  <TableHead className="w-20" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((l) => {
+                  const st = linkStatus(l);
+                  return (
+                    <TableRow key={l.linkId}>
+                      <TableCell>
+                        {st === "active" && (
+                          <Checkbox
+                            aria-label={`select ${l.linkId}`}
+                            checked={selected.has(l.linkId)}
+                            onCheckedChange={() => toggle(l.linkId)}
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell className="font-medium">{l.displayName || "—"}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">{l.linkId}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{policyLabel(l.accessPolicy)}</TableCell>
+                      <TableCell>
+                        <StatusBadge status={st} />
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground" title={absoluteTime(l.expiresAt)}>
+                        {relativeTime(l.expiresAt)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{l.viewCount}</TableCell>
+                      <TableCell className="text-right">
+                        {st === "active" && (
+                          <Button variant="ghost" size="sm" onClick={() => setRevoke(l)}>
+                            Revoke
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+          {cursor && (
+            <div className="mt-4">
+              <Button variant="outline" onClick={() => load(false)}>
+                Load more
+              </Button>
+            </div>
           )}
-          <Input label="Expires in (seconds)" type="number" value={f.expiresInSeconds} onChange={(e) => setF({ ...f, expiresInSeconds: e.target.value })} />
-          <Select label="Access policy" value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
-            <option value="public_token">Public token</option>
-            <option value="password">Password</option>
-            <option value="account">Account required</option>
-            <option value="ip_allowlist">IP allowlist</option>
-          </Select>
-          {f.type === "password" && <Input label="Password (stored hashed; attempts are rate-limited)" type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} />}
-          {f.type === "ip_allowlist" && <Input label="CIDR allowlist (comma-separated)" value={f.ipAllowlist} onChange={(e) => setF({ ...f, ipAllowlist: e.target.value })} placeholder="203.0.113.0/24" />}
-          <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-            <input type="checkbox" checked={f.allowDownload} onChange={(e) => setF({ ...f, allowDownload: e.target.checked })} /> Allow download (best-effort)
-          </label>
-          <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-            <input type="checkbox" checked={f.singleUse} onChange={(e) => setF({ ...f, singleUse: e.target.checked })} /> Single use
-          </label>
-          {!f.singleUse && <Input label="Max views (0 = unlimited)" type="number" value={f.maxViews} onChange={(e) => setF({ ...f, maxViews: e.target.value })} />}
-          {err && <div style={{ color: "var(--color-danger)", fontSize: 13, marginBottom: 12 }}>{err}</div>}
-          <Button loading={loading} onClick={submit}>Create link</Button>
-        </div>
+        </>
       )}
-    </Drawer>
+
+      <ConfirmDialog
+        open={!!revoke}
+        onOpenChange={(o) => !o && setRevoke(null)}
+        title="Revoke link"
+        destructive
+        confirmLabel="Revoke"
+        description={`Revoke "${revoke?.displayName || revoke?.linkId}"? Visitors will get a 410 within seconds.`}
+        onConfirm={async () => {
+          const l = revoke;
+          setRevoke(null);
+          await api(`/preview-links/${l.linkId}/revoke`, { method: "POST" });
+          load(true);
+          toast.success("Link revoked", { description: "Audit logged." });
+        }}
+      />
+      <ConfirmDialog
+        open={batchRevoke}
+        onOpenChange={setBatchRevoke}
+        title="Revoke selected links"
+        destructive
+        confirmLabel="Revoke all"
+        confirmWord="REVOKE"
+        description={`Revoke ${selected.size} selected link(s)? Visitors will get a 410 within seconds. This cannot be undone.`}
+        onConfirm={async () => {
+          const ids = Array.from(selected);
+          setBatchRevoke(false);
+          await Promise.allSettled(ids.map((id) => api(`/preview-links/${id}/revoke`, { method: "POST" })));
+          setSelected(new Set());
+          load(true);
+          toast.success(`Revoked ${ids.length} link(s)`, { description: "Audit logged." });
+        }}
+      />
+    </div>
   );
 }

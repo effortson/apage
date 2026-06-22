@@ -2,10 +2,41 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import {
+  LayoutDashboard,
+  Boxes,
+  Link2,
+  Files,
+  Globe,
+  ScrollText,
+  CreditCard,
+  Users,
+  Settings,
+  LogOut,
+  type LucideIcon,
+} from "lucide-react";
 import { api, setTenant, getTenant } from "@/lib/api";
-import { ThemeToggle } from "@/components/theme";
-import { Badge } from "@/components/ui";
 import { useT, LocaleToggle } from "@/lib/i18n";
+import { ThemeToggle } from "@/components/theme";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type Session = {
   user: { userId: string; email: string; emailVerified: boolean };
@@ -15,16 +46,16 @@ type Session = {
 const roleRank: Record<string, number> = { viewer: 0, member: 1, admin: 2, owner: 3 };
 
 // Nav with the minimum role each surface requires (mirrors backend RBAC, UI §7).
-const nav: [string, string, string][] = [
-  ["Overview", "/console", "viewer"],
-  ["Instances", "/console/instances", "viewer"],
-  ["Preview Links", "/console/links", "viewer"],
-  ["Cloud Files", "/console/files", "viewer"],
-  ["Custom Domains", "/console/domains", "admin"],
-  ["Audit Logs", "/console/audit", "admin"],
-  ["Usage & Billing", "/console/usage", "admin"],
-  ["Members", "/console/members", "member"],
-  ["Settings", "/console/settings", "member"],
+const nav: [string, string, string, LucideIcon][] = [
+  ["Overview", "/console", "viewer", LayoutDashboard],
+  ["Instances", "/console/instances", "viewer", Boxes],
+  ["Preview Links", "/console/links", "viewer", Link2],
+  ["Cloud Files", "/console/files", "viewer", Files],
+  ["Custom Domains", "/console/domains", "admin", Globe],
+  ["Audit Logs", "/console/audit", "admin", ScrollText],
+  ["Usage & Billing", "/console/usage", "admin", CreditCard],
+  ["Members", "/console/members", "member", Users],
+  ["Settings", "/console/settings", "member", Settings],
 ];
 
 export default function ConsoleLayout({ children }: { children: React.ReactNode }) {
@@ -32,62 +63,138 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const pathname = usePathname();
   const t = useT();
   const [session, setSession] = useState<Session | null>(null);
-  const [tenant, setT] = useState<string | null>(null);
+  const [tenant, setTenantState] = useState<string | null>(null);
 
   useEffect(() => {
     api<Session>("/auth/session", { tenant: false })
       .then((s) => {
         setSession(s);
-        let t = getTenant();
-        if (!t || !s.tenants.find((x) => x.tenantId === t)) {
-          t = s.tenants[0]?.tenantId || null;
-          setTenant(t);
+        let cur = getTenant();
+        if (!cur || !s.tenants.find((x) => x.tenantId === cur)) {
+          cur = s.tenants[0]?.tenantId || null;
+          setTenant(cur);
         }
-        setT(t);
+        setTenantState(cur);
       })
       .catch(() => router.push("/login"));
   }, [router]);
 
-  if (!session) return <div style={{ padding: 40 }}>Loading…</div>;
+  if (!session) {
+    return (
+      <div className="flex min-h-screen">
+        <aside className="hidden w-60 border-r p-4 md:block">
+          <Skeleton className="mb-6 h-7 w-24" />
+          <div className="space-y-2">
+            {Array.from({ length: 7 }).map((_, i) => (
+              <Skeleton key={i} className="h-8 w-full" />
+            ))}
+          </div>
+        </aside>
+        <main className="flex-1 p-6">
+          <Skeleton className="h-8 w-48" />
+        </main>
+      </div>
+    );
+  }
+
   const current = session.tenants.find((x) => x.tenantId === tenant);
   const rank = roleRank[current?.role || "viewer"] ?? 0;
   const visibleNav = nav.filter(([, , min]) => rank >= (roleRank[min] ?? 0));
+  const initials = session.user.email.slice(0, 2).toUpperCase();
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
-      <aside style={{ width: 240, borderRight: "1px solid var(--color-border)", padding: "var(--space-4)", background: "var(--color-bg-subtle)" }}>
-        <div style={{ fontWeight: 700, fontSize: 18, marginBottom: "var(--space-5)" }}>APAGE</div>
-        <nav>
-          {visibleNav.map(([label, href]) => {
+    <div className="flex min-h-screen">
+      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r bg-muted/30 md:flex">
+        <div className="flex h-14 items-center px-6 text-lg font-semibold tracking-tight">
+          APAGE
+        </div>
+        <nav className="flex-1 space-y-1 px-3 py-2">
+          {visibleNav.map(([label, href, , Icon]) => {
             const active = pathname === href;
             return (
-              <Link key={href} href={href} style={{
-                display: "block", padding: "8px 10px", borderRadius: "var(--radius-sm)", marginBottom: 2,
-                color: active ? "var(--color-primary)" : "var(--color-text-muted)",
-                background: active ? "var(--color-primary-subtle)" : "transparent",
-                fontWeight: active ? 600 : 400, textDecoration: "none",
-              }}>{t(label)}</Link>
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                  active
+                    ? "bg-accent font-medium text-accent-foreground"
+                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {t(label)}
+              </Link>
             );
           })}
         </nav>
       </aside>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 24px", borderBottom: "1px solid var(--color-border)" }}>
-          <select value={tenant || ""} onChange={(e) => { setTenant(e.target.value); setT(e.target.value); location.reload(); }}
-            style={{ padding: "6px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-strong)", background: "var(--color-bg)", color: "var(--color-text)" }}>
-            {session.tenants.map((t) => <option key={t.tenantId} value={t.tenantId}>{t.name}</option>)}
-          </select>
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            {current && <Badge tone="info">{current.plan}</Badge>}
-            {current && <span style={{ fontSize: 13, color: "var(--color-text-muted)" }}>{current.role}</span>}
-            <span style={{ fontSize: 13 }}>{session.user.email}</span>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-10 flex h-14 items-center justify-between gap-3 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-6">
+          <Select
+            value={tenant || ""}
+            onValueChange={(v) => {
+              setTenant(v);
+              setTenantState(v);
+              location.reload();
+            }}
+          >
+            <SelectTrigger className="h-8 w-[180px]">
+              <SelectValue placeholder="Select tenant" />
+            </SelectTrigger>
+            <SelectContent>
+              {session.tenants.map((tn) => (
+                <SelectItem key={tn.tenantId} value={tn.tenantId}>
+                  {tn.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="flex items-center gap-1.5">
+            {current && (
+              <Badge variant="secondary" className="hidden capitalize sm:inline-flex">
+                {current.plan}
+              </Badge>
+            )}
             <LocaleToggle />
             <ThemeToggle />
-            <button onClick={async () => { await api("/auth/logout", { method: "POST", tenant: false }); router.push("/login"); }}
-              style={{ background: "none", border: "1px solid var(--color-border)", borderRadius: "var(--radius-sm)", padding: "4px 8px", cursor: "pointer", color: "var(--color-text-muted)" }}>{t("Sign out")}</button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-full">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
+                    {initials}
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="truncate font-normal">
+                  <span className="block text-sm font-medium">{session.user.email}</span>
+                  {current && (
+                    <span className="text-xs capitalize text-muted-foreground">
+                      {current.role}
+                    </span>
+                  )}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={async () => {
+                    await api("/auth/logout", { method: "POST", tenant: false });
+                    router.push("/login");
+                  }}
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  {t("Sign out")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
-        <main style={{ flex: 1, padding: "var(--space-5)", maxWidth: 1280 }}>{children}</main>
+
+        <main className="mx-auto w-full max-w-screen-xl flex-1 p-4 md:p-6">
+          {children}
+        </main>
       </div>
     </div>
   );

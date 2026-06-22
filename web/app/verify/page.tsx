@@ -3,7 +3,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, ApiException } from "@/lib/api";
 import { AuthShell } from "@/components/authshell";
-import { Button, Input } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function Verify() {
   const [status, setStatus] = useState<"working" | "ok" | "needsResend">("working");
@@ -24,34 +27,51 @@ export default function Verify() {
       });
   }, []);
 
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    await api("/auth/resend-verification", { method: "POST", tenant: false, body: { email } }).catch(() => {});
+    setMsg("If that account still needs verification, a new link has been sent.");
+  }
+
   return (
-    <AuthShell title="Verify your email">
-      {status === "working" && <p style={{ color: "var(--color-text-muted)" }}>Verifying…</p>}
+    <AuthShell
+      title="Verify your email"
+      footer={
+        <Link href="/login" className="text-foreground underline-offset-4 hover:underline">
+          Back to sign in
+        </Link>
+      }
+    >
+      {status === "working" && (
+        <p className="text-center text-sm text-muted-foreground">Verifying…</p>
+      )}
       {status === "ok" && (
-        <>
-          <p>Your email is verified.</p>
-          <Button onClick={() => (location.href = "/login")} style={{ width: "100%", marginTop: 8 }}>Continue to sign in</Button>
-        </>
+        <div className="space-y-4">
+          <p className="text-center text-sm text-muted-foreground">Your email is verified.</p>
+          <Button onClick={() => (location.href = "/login")} className="w-full">
+            Continue to sign in
+          </Button>
+        </div>
       )}
       {status === "needsResend" && (
-        <>
-          {msg && <p style={{ color: "var(--color-danger)", fontSize: 13 }}>{msg}</p>}
-          <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>Enter your email to receive a new verification link.</p>
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              await api("/auth/resend-verification", { method: "POST", tenant: false, body: { email } }).catch(() => {});
-              setMsg("If that account still needs verification, a new link has been sent.");
-            }}
-          >
-            <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-            <Button type="submit" style={{ width: "100%" }}>Resend verification</Button>
+        <div className="space-y-4">
+          {msg && (
+            <Alert>
+              <AlertDescription>{msg}</AlertDescription>
+            </Alert>
+          )}
+          <p className="text-sm text-muted-foreground">Enter your email to receive a new verification link.</p>
+          <form onSubmit={submit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            </div>
+            <Button type="submit" className="w-full">
+              Resend verification
+            </Button>
           </form>
-        </>
+        </div>
       )}
-      <p style={{ fontSize: 13, marginTop: 16, color: "var(--color-text-muted)" }}>
-        <Link href="/login">Back to sign in</Link>
-      </p>
     </AuthShell>
   );
 }

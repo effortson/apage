@@ -1,11 +1,42 @@
 "use client";
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
-import { Button, Table, Td, Badge, Drawer, Input, Skeleton, useToast, CopyField, statusTone, Modal } from "@/components/ui";
+import { api, ApiException } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
+import {
+  PageHeader,
+  EmptyState,
+  StatusBadge,
+  CopyField,
+} from "@/components/composites";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 export default function Domains() {
-  const toast = useToast();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [add, setAdd] = useState(false);
@@ -16,79 +47,196 @@ export default function Domains() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-        <h1>Custom Domains</h1>
-        <Button onClick={() => setAdd(true)}>Add domain</Button>
-      </div>
-      {loading ? <Skeleton rows={3} /> : items.length === 0 ? (
-        <p style={{ color: "var(--color-text-muted)" }}>No custom domains. Available on paid plans; subject to your plan&apos;s domain limit.</p>
+      <PageHeader
+        title="Custom Domains"
+        description="Serve previews from your own domain. Available on paid plans; subject to your plan's domain limit."
+        actions={<Button onClick={() => setAdd(true)}>Add domain</Button>}
+      />
+
+      {loading ? (
+        <Skeleton className="h-48 w-full" />
+      ) : items.length === 0 ? (
+        <EmptyState
+          title="No custom domains"
+          hint="Available on paid plans; subject to your plan's domain limit."
+          action={<Button onClick={() => setAdd(true)}>Add domain</Button>}
+        />
       ) : (
-        <Table head={["Domain", "Status", "Certificate", "Last checked", ""]}>
-          {items.map((d) => (
-            <tr key={d.domainId}>
-              <Td mono>{d.domain}</Td>
-              <Td><Badge tone={statusTone(d.status)}>{d.status}</Badge></Td>
-              <Td>{d.certStatus}</Td>
-              <Td>{relativeTime(d.lastCheckedAt)}</Td>
-              <Td>
-                <Button size="sm" variant="ghost" onClick={async () => {
-                  const r = await api<any>(`/custom-domains/${d.domainId}/verify`, { method: "POST" });
-                  toast({ tone: r.status === "verified" ? "success" : "danger", msg: `Status: ${r.status}` });
-                  if (r.checks) setDiag({ domain: d.domain, ...r });
-                  load();
-                }}>Check DNS</Button>
-              </Td>
-            </tr>
-          ))}
-        </Table>
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Domain</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Certificate</TableHead>
+                <TableHead>Last checked</TableHead>
+                <TableHead className="w-28" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((d) => (
+                <TableRow key={d.domainId}>
+                  <TableCell className="font-mono text-xs">{d.domain}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={d.status} />
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{d.certStatus}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{relativeTime(d.lastCheckedAt)}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={async () => {
+                        const r = await api<any>(`/custom-domains/${d.domainId}/verify`, { method: "POST" });
+                        if (r.status === "verified") toast.success(`Status: ${r.status}`);
+                        else toast.error(`Status: ${r.status}`);
+                        if (r.checks) setDiag({ domain: d.domain, ...r });
+                        load();
+                      }}
+                    >
+                      Check DNS
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
-      {add && <AddDomain onClose={() => setAdd(false)} onDone={() => { setAdd(false); load(); }} />}
-      {diag && (
-        <Modal title={`DNS check — ${diag.domain}`} onClose={() => setDiag(null)}>
-          <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>Status: <Badge tone={statusTone(diag.status)}>{diag.status}</Badge> · cert {diag.certStatus}</p>
-          <DnsCheck label="TXT (ownership)" name={diag.checks.txt.name} expected={diag.checks.txt.expected} observed={undefined} ok={diag.checks.txt.ok} />
-          <DnsCheck label="CNAME (routing)" name={diag.checks.cname.name} expected={diag.checks.cname.expected} observed={diag.checks.cname.observed} ok={diag.checks.cname.ok} />
-          <Button style={{ marginTop: 16 }} onClick={() => setDiag(null)}>Close</Button>
-        </Modal>
-      )}
+
+      <AddDomain open={add} onOpenChange={setAdd} onDone={() => { setAdd(false); load(); }} />
+
+      <Dialog open={!!diag} onOpenChange={(o) => !o && setDiag(null)}>
+        <DialogContent className="sm:max-w-lg">
+          {diag && (
+            <>
+              <DialogHeader>
+                <DialogTitle>DNS check — {diag.domain}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  Status: <StatusBadge status={diag.status} /> · cert {diag.certStatus}
+                </p>
+                <DnsCheck label="TXT (ownership)" name={diag.checks.txt.name} expected={diag.checks.txt.expected} observed={undefined} ok={diag.checks.txt.ok} />
+                <DnsCheck label="CNAME (routing)" name={diag.checks.cname.name} expected={diag.checks.cname.expected} observed={diag.checks.cname.observed} ok={diag.checks.cname.ok} />
+              </div>
+              <DialogFooter>
+                <Button onClick={() => setDiag(null)}>Close</Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 function DnsCheck({ label, name, expected, observed, ok }: { label: string; name: string; expected: string; observed?: string; ok: boolean }) {
   return (
-    <div style={{ marginTop: 12, padding: 12, border: "1px solid var(--color-border)", borderRadius: "var(--radius-sm)" }}>
-      <div style={{ fontWeight: 600, fontSize: 13 }}>{label} <span style={{ color: ok ? "var(--color-success)" : "var(--color-danger)" }}>{ok ? "✓ ok" : "✗ not found"}</span></div>
-      <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>Record: <code>{name}</code></div>
-      <div style={{ fontSize: 12, marginTop: 4 }}>Expected: <code>{expected}</code></div>
-      {observed !== undefined && <div style={{ fontSize: 12, marginTop: 2 }}>Observed: <code>{observed || "(none)"}</code></div>}
+    <div className="rounded-md border p-3">
+      <div className="text-sm font-semibold">
+        {label}{" "}
+        <span className={ok ? "text-green-600 dark:text-green-500" : "text-destructive"}>
+          {ok ? "✓ ok" : "✗ not found"}
+        </span>
+      </div>
+      <div className="mt-1 text-xs text-muted-foreground">
+        Record: <code className="font-mono">{name}</code>
+      </div>
+      <div className="mt-1 text-xs">
+        Expected: <code className="font-mono">{expected}</code>
+      </div>
+      {observed !== undefined && (
+        <div className="mt-0.5 text-xs">
+          Observed: <code className="font-mono">{observed || "(none)"}</code>
+        </div>
+      )}
     </div>
   );
 }
 
-function AddDomain({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const toast = useToast();
-  const [domain, setDomain] = useState(""); const [res, setRes] = useState<any>(null);
+function AddDomain({
+  open,
+  onOpenChange,
+  onDone,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onDone: () => void;
+}) {
+  const [domain, setDomain] = useState("");
+  const [res, setRes] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Reset the sheet each time it opens.
+  useEffect(() => {
+    if (open) {
+      setDomain("");
+      setRes(null);
+    }
+  }, [open]);
+
   return (
-    <Drawer title={res ? "DNS records" : "Add custom domain"} onClose={onClose}>
-      {res ? (
-        <div>
-          <p>Add these records at your DNS provider, then click Check DNS.</p>
-          <h3 style={{ marginTop: 12 }}>TXT (ownership)</h3>
-          <CopyField value={`${res.dns.txt.name}  TXT  ${res.dns.txt.value}`} />
-          <h3 style={{ marginTop: 12 }}>CNAME</h3>
-          <CopyField value={`${res.dns.cname.name}  CNAME  ${res.dns.cname.value}`} />
-          <Button style={{ marginTop: 16 }} onClick={onDone}>Done</Button>
-        </div>
-      ) : (
-        <div>
-          <Input label="Domain" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="preview.customer.com" />
-          <Button onClick={async () => {
-            try { const r = await api<any>("/custom-domains", { method: "POST", body: { domain } }); setRes(r); }
-            catch (e: any) { toast({ tone: "danger", msg: e.body?.message || "Failed" }); }
-          }}>Add domain</Button>
-        </div>
-      )}
-    </Drawer>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full sm:max-w-md">
+        {res ? (
+          <>
+            <SheetHeader>
+              <SheetTitle>DNS records</SheetTitle>
+              <SheetDescription>
+                Add these records at your DNS provider, then click Check DNS.
+              </SheetDescription>
+            </SheetHeader>
+            <div className="mt-6 space-y-4">
+              <div className="space-y-1.5">
+                <Label>TXT (ownership)</Label>
+                <CopyField value={`${res.dns.txt.name}  TXT  ${res.dns.txt.value}`} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>CNAME</Label>
+                <CopyField value={`${res.dns.cname.name}  CNAME  ${res.dns.cname.value}`} />
+              </div>
+              <Button onClick={onDone}>Done</Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <SheetHeader>
+              <SheetTitle>Add custom domain</SheetTitle>
+              <SheetDescription>
+                Enter your domain; we&apos;ll issue the DNS records to verify ownership.
+              </SheetDescription>
+            </SheetHeader>
+            <div className="mt-6 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="domain">Domain</Label>
+                <Input
+                  id="domain"
+                  value={domain}
+                  onChange={(e) => setDomain(e.target.value)}
+                  placeholder="preview.customer.com"
+                />
+              </div>
+              <Button
+                disabled={loading}
+                onClick={async () => {
+                  setLoading(true);
+                  try {
+                    const r = await api<any>("/custom-domains", { method: "POST", body: { domain } });
+                    setRes(r);
+                  } catch (e) {
+                    toast.error(e instanceof ApiException ? e.body.message : "Failed");
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+              >
+                {loading ? "Adding…" : "Add domain"}
+              </Button>
+            </div>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
   );
 }
