@@ -45,7 +45,7 @@ func main() {
 	if o, err := objstore.New(objstore.Config{
 		Endpoint: cfg.S3Endpoint, Bucket: cfg.S3Bucket, Region: cfg.S3Region,
 		AccessKey: cfg.S3AccessKey, SecretKey: cfg.S3SecretKey, UseSSL: cfg.S3UseSSL,
-		PresignTTL: time.Duration(cfg.PresignURLTTLSeconds) * time.Second,
+		PresignTTL: time.Duration(cfg.PresignURLTTLSeconds) * time.Second, LifecycleDays: cfg.S3LifecycleDays,
 	}); err != nil {
 		log.Warn("object storage unavailable (delete disabled)", "err", err)
 	} else {

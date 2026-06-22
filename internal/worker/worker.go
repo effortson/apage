@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -188,18 +189,58 @@ func (w *Worker) handleScan(ctx context.Context, fileID string) {
 	w.log.Info("file ready", "file", fileID, "mime", f.MimeType)
 }
 
-// handleDelete removes objects, retrying via re-enqueue on failure (spec §11
-// tombstone + retry).
-func (w *Worker) handleDelete(ctx context.Context, key string) {
+const maxDeleteAttempts = 6
+
+// handleDelete removes a stored object, retrying with capped exponential backoff
+// and tombstoning to a dead-letter list after maxDeleteAttempts (spec §11). The
+// object-store lifecycle policy is the ultimate backstop for anything that
+// still fails. APAGE stores only the original object (no derivatives).
+func (w *Worker) handleDelete(ctx context.Context, payload string) {
 	if w.obj == nil {
 		return
 	}
-	// Delete original + known derivatives (spec §11).
-	base := strings.TrimSuffix(key, "/original")
-	keys := []string{key, base + "/preview.pdf", base + "/thumb.webp"}
-	if err := w.obj.Delete(keys...); err != nil {
-		w.log.Warn("object delete failed, re-queueing", "key", key, "err", err)
-		_ = w.rdb.Enqueue(ctx, "delete", key) // retry (spec §11)
+	key, attempt := parseRetry(payload)
+	err := w.obj.Delete(key)
+	if err == nil {
+		return
+	}
+	if attempt+1 >= maxDeleteAttempts {
+		w.log.Error("object delete exhausted retries (tombstoned)", "key", key, "attempts", attempt+1, "err", err)
+		_ = w.rdb.Enqueue(ctx, "delete:dead", key) // dead-letter for ops (spec §11 tombstone)
+		return
+	}
+	attempt++
+	delay := retryBackoff(attempt)
+	w.log.Warn("object delete failed, scheduling retry", "key", key, "attempt", attempt, "delay", delay.String(), "err", err)
+	go w.requeueAfter(ctx, "delete", key, attempt, delay) // off the consumer so other deletes proceed
+}
+
+// parseRetry splits a "payload|attempt" retry-tagged queue message.
+func parseRetry(p string) (string, int) {
+	if i := strings.LastIndexByte(p, '|'); i >= 0 {
+		if n, err := strconv.Atoi(p[i+1:]); err == nil {
+			return p[:i], n
+		}
+	}
+	return p, 0
+}
+
+// retryBackoff is capped exponential backoff for delete retries.
+func retryBackoff(attempt int) time.Duration {
+	d := time.Duration(1<<uint(attempt)) * 10 * time.Second
+	if d > 10*time.Minute {
+		d = 10 * time.Minute
+	}
+	return d
+}
+
+// requeueAfter re-enqueues a retry-tagged task after delay without blocking the
+// consumer; aborts if the worker is shutting down.
+func (w *Worker) requeueAfter(ctx context.Context, queue, payload string, attempt int, delay time.Duration) {
+	select {
+	case <-ctx.Done():
+	case <-time.After(delay):
+		_ = w.rdb.Enqueue(context.Background(), queue, payload+"|"+strconv.Itoa(attempt))
 	}
 }
 
@@ -309,4 +350,3 @@ func scan(f *store.File) verdict {
 	}
 	return verdict{true, ""}
 }
-

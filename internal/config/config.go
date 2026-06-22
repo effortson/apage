@@ -31,6 +31,10 @@ type Config struct {
 	S3AccessKey      string
 	S3SecretKey      string
 	S3UseSSL         bool
+	// S3LifecycleDays sets a bucket lifecycle rule expiring all objects after N
+	// days as an orphan-cleanup backstop (0 = disabled). Set well beyond the
+	// longest plan retention so it never deletes live files (spec §19.3).
+	S3LifecycleDays int
 
 	// Secrets
 	JWTSigningSecret string
@@ -94,6 +98,7 @@ func Load() (*Config, error) {
 		S3AccessKey:             env("S3_ACCESS_KEY", "minioadmin"),
 		S3SecretKey:             env("S3_SECRET_KEY", "minioadmin"),
 		S3UseSSL:                envBool("S3_USE_SSL", false),
+		S3LifecycleDays:         envInt("S3_LIFECYCLE_DAYS", 0),
 		JWTSigningSecret:        env("JWT_SIGNING_SECRET", "dev-jwt-secret-change-me"),
 		SessionSecret:           env("SESSION_SECRET", "dev-session-secret-change-me"),
 		AgentMinProtocolVersion: env("AGENT_MIN_PROTOCOL_VERSION", "1"),

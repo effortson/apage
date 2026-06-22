@@ -80,6 +80,7 @@ func (t *TunnelClient) connectOnce(ctx context.Context) error {
 		Type: tunnel.TypeConnect, InstanceID: t.cfg.InstanceID, AgentToken: t.agentToken,
 		ProtocolVersion: tunnel.ProtocolVersion, AgentVersion: t.version,
 		Capabilities: []string{"file.stream", "file.metadata"}, DeviceFingerprint: deviceFingerprint(),
+		Allowlist: []string{t.cfg.Workspace},
 	}); err != nil {
 		return err
 	}

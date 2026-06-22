@@ -50,7 +50,7 @@ func main() {
 	obj, err := objstore.New(objstore.Config{
 		Endpoint: cfg.S3Endpoint, PublicEndpoint: cfg.S3PublicEndpoint, Bucket: cfg.S3Bucket, Region: cfg.S3Region,
 		AccessKey: cfg.S3AccessKey, SecretKey: cfg.S3SecretKey, UseSSL: cfg.S3UseSSL,
-		PresignTTL: time.Duration(cfg.PresignURLTTLSeconds) * time.Second,
+		PresignTTL: time.Duration(cfg.PresignURLTTLSeconds) * time.Second, LifecycleDays: cfg.S3LifecycleDays,
 	})
 	if err != nil {
 		// Object storage is optional for tunnel-only MVP; log and continue.
@@ -86,11 +86,21 @@ func main() {
 		}
 	}()
 
+	// Internal observability listener (spec §18/§31) — kept off the public host.
+	metricsSrv := &http.Server{Addr: cfg.MetricsAddr, Handler: srv.MetricsHandler(), ReadHeaderTimeout: 10 * time.Second}
+	go func() {
+		log.Info("apage-api metrics listening", "addr", cfg.MetricsAddr)
+		if err := metricsSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Warn("metrics listen", "err", err)
+		}
+	}()
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
+	_ = metricsSrv.Shutdown(shutdownCtx)
 	log.Info("apage-api stopped")
 }

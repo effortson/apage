@@ -6,6 +6,7 @@ package redisx
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -118,15 +119,27 @@ func (c *Client) RateLimit(ctx context.Context, key string, limit int, window ti
 
 // --- Agent session registry (spec §19.4) ---
 
-// RegisterAgent maps instance_id -> {gateway_id, gateway_url, session_id} with a
-// TTL strictly below the offline timeout (spec §19.4). gatewayURL lets the API
-// route a preview to the specific gateway serving the instance.
-func (c *Client) RegisterAgent(ctx context.Context, instanceID, gatewayID, gatewayURL, sessionID string, ttl time.Duration) error {
+// AgentReg is a live agent registration as seen by the API (spec §19.4).
+type AgentReg struct {
+	GatewayID       string
+	GatewayURL      string
+	SessionID       string
+	ProtocolVersion string
+	Allowlist       []string
+}
+
+// RegisterAgent records a live agent registration with a TTL strictly below the
+// offline timeout (spec §19.4). gatewayURL routes previews to the owning gateway;
+// protocolVersion/allowlist are the agent's actually-reported values.
+func (c *Client) RegisterAgent(ctx context.Context, instanceID string, reg AgentReg, ttl time.Duration) error {
 	key := "agent:" + instanceID
+	allow, _ := json.Marshal(reg.Allowlist)
 	if err := c.rdb.HSet(ctx, key,
-		"gateway_id", gatewayID,
-		"gateway_url", gatewayURL,
-		"session_id", sessionID,
+		"gateway_id", reg.GatewayID,
+		"gateway_url", reg.GatewayURL,
+		"session_id", reg.SessionID,
+		"protocol_version", reg.ProtocolVersion,
+		"allowlist", string(allow),
 		"updated_at", time.Now().Unix(),
 	).Err(); err != nil {
 		return err
@@ -141,17 +154,23 @@ func (c *Client) TouchAgent(ctx context.Context, instanceID string, ttl time.Dur
 	return c.rdb.Expire(ctx, "agent:"+instanceID, ttl).Err()
 }
 
-// LookupAgent returns the gateway (id + internal URL) and session serving an
-// instance, if online (spec §19.4 routing).
-func (c *Client) LookupAgent(ctx context.Context, instanceID string) (gatewayID, gatewayURL, sessionID string, online bool, err error) {
+// LookupAgent returns the live registration for an instance, if online (§19.4).
+func (c *Client) LookupAgent(ctx context.Context, instanceID string) (AgentReg, bool, error) {
 	m, err := c.rdb.HGetAll(ctx, "agent:"+instanceID).Result()
 	if err != nil {
-		return "", "", "", false, err
+		return AgentReg{}, false, err
 	}
 	if len(m) == 0 {
-		return "", "", "", false, nil
+		return AgentReg{}, false, nil
 	}
-	return m["gateway_id"], m["gateway_url"], m["session_id"], true, nil
+	reg := AgentReg{
+		GatewayID: m["gateway_id"], GatewayURL: m["gateway_url"],
+		SessionID: m["session_id"], ProtocolVersion: m["protocol_version"],
+	}
+	if a := m["allowlist"]; a != "" {
+		_ = json.Unmarshal([]byte(a), &reg.Allowlist)
+	}
+	return reg, true, nil
 }
 
 // UnregisterAgent removes the mapping when a gateway loses the connection.

@@ -47,6 +47,7 @@ type Frame struct {
 	AgentVersion      string   `json:"agentVersion,omitempty"`
 	Capabilities      []string `json:"capabilities,omitempty"`
 	DeviceFingerprint string   `json:"deviceFingerprint,omitempty"`
+	Allowlist         []string `json:"allowlist,omitempty"` // agent-reported allowlist roots (read-only display)
 
 	// session.accepted
 	SessionID            string `json:"sessionId,omitempty"`

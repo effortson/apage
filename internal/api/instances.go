@@ -114,15 +114,23 @@ func (s *Server) handleGetInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = err
-	gw, _, sess, online, _ := s.rdb.LookupAgent(r.Context(), in.InstanceID)
+	reg, online, _ := s.rdb.LookupAgent(r.Context(), in.InstanceID)
+	protocolVersion := reg.ProtocolVersion
+	if protocolVersion == "" {
+		protocolVersion = s.cfg.AgentMinProtocolVersion // floor, when offline/unknown
+	}
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"instance": in,
 		"connection": map[string]any{
-			"online": online, "gatewayId": gw, "sessionId": sess,
-			"protocolVersion": s.cfg.AgentMinProtocolVersion,
+			"online": online, "gatewayId": reg.GatewayID, "sessionId": reg.SessionID,
+			"protocolVersion": protocolVersion, // the agent's actually-negotiated version
 		},
-		// allowlist is reported by the agent; surfaced read-only (spec §6.3).
-		"allowlist": map[string]any{"note": "allowlist is configured on the customer server and reported by the agent; the console cannot widen it remotely"},
+		// allowlist roots reported by the agent; read-only (the console cannot
+		// widen the allowlist remotely, spec §6.3).
+		"allowlist": map[string]any{
+			"roots": reg.Allowlist,
+			"note":  "configured on the customer server and reported by the agent; the console cannot widen it remotely",
+		},
 	})
 }
 

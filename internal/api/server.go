@@ -24,6 +24,8 @@ type Server struct {
 	mail  Mailer
 	gw    GatewayClient
 	store ObjectStore
+
+	previewAccessTotal int64 // atomic counter for /metrics (spec §18)
 }
 
 // Mailer sends transactional email (verification, invites, resets).
@@ -137,7 +139,8 @@ func (s *Server) Router() http.Handler {
 		// Data-plane (spec §8/§12) — instance_api_key OR console session (§14).
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireData)
-			r.Use(s.csrfGuard) // session callers need CSRF; bearer callers bypass
+			r.Use(s.csrfGuard)          // session callers need CSRF; bearer callers bypass
+			r.Use(s.dataWriteRateLimit) // per-tenant write throttle (spec §19.6)
 			r.Post("/preview-links", s.handleCreateLink)
 			r.Get("/preview-links", s.handleListLinks)
 			r.Post("/preview-links/{id}/revoke", s.handleRevokeLink)

@@ -113,7 +113,10 @@ func (s *Server) handleAgentConnect(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	// Registry + DB status (spec §19.4): TTL below offline timeout.
-	_ = s.rdb.RegisterAgent(r.Context(), in.InstanceID, s.gatewayID, s.cfg.GatewayAdvertiseURL, sessionID, 40*time.Second)
+	_ = s.rdb.RegisterAgent(r.Context(), in.InstanceID, redisx.AgentReg{
+		GatewayID: s.gatewayID, GatewayURL: s.cfg.GatewayAdvertiseURL, SessionID: sessionID,
+		ProtocolVersion: cf.ProtocolVersion, Allowlist: cf.Allowlist,
+	}, 40*time.Second)
 	_ = s.db.SetInstanceStatus(r.Context(), in.InstanceID, "online", cf.AgentVersion)
 	_ = s.db.WriteAudit(r.Context(), audit.Entry{TenantID: in.TenantID, InstanceID: in.InstanceID,
 		Event: audit.AgentConnected, ActorType: audit.ActorInstanceAPIKey, ActorID: in.InstanceID})

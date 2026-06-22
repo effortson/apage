@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/apage/apage/internal/hash"
 	"github.com/apage/apage/internal/httpx"
@@ -128,6 +129,25 @@ func safeMethod(m string) bool {
 		return true
 	}
 	return false
+}
+
+// dataWriteRateLimit throttles state-changing data-plane requests per tenant to
+// blunt abuse/DoS from a leaked instance key (spec §19.6). Reads/lists pass.
+func (s *Server) dataWriteRateLimit(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if safeMethod(r.Method) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		key := "datawrite:unknown"
+		if sc := scopeFrom(r.Context()); sc != nil {
+			key = "datawrite:" + sc.TenantID
+		}
+		if !s.limit(w, r, key, 300, time.Minute) {
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // csrfGuard enforces double-submit CSRF on cookie-authenticated, state-changing

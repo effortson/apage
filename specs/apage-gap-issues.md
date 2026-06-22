@@ -153,21 +153,27 @@
 
 ## P2 — 生产纵深
 
+> **进度(branch `fix/p0-security`)**:已修 **030 / 031 / 033 / 034 / 035 / 038**(✅),**032 大部分满足**(🟡)。**剩余**:036 合规(审计保留可做,数据驻留需多 region 基建)、037 Admin 后端(独立服务 + SSO/MFA,需决策)、039 握手硬化(capabilities/fingerprint,部分可做)、040 测试覆盖/audit 分区。
+
 ### APAGE-030 · 通用 API 限流缺失(仅 auth 有)
-- `internal/api/auth.go:237` 是唯一 `RateLimit` 调用方;数据面写接口、访客 runtime 无限流。
+- **状态**:✅ 已修。新增 `dataWriteRateLimit` 中间件:数据面写接口按租户限流 300/min(只限非安全方法,读/列表放行);访客 runtime(`handlePreview` + `handlePreviewRaw`)按源 IP 限流 600/min。配合已有的 link-create(按 trust)/unlock/abuse 限流。
+- `internal/api/auth.go` 曾是唯一 `RateLimit` 调用方;数据面写接口、访客 runtime 无限流。
 
 ### APAGE-031 · 对象删除无退避/墓碑/上限;无 lifecycle 兜底
-- `internal/worker/worker.go:113-116` 失败即无退避无限重排,无死信;`objstore` 无 bucket lifecycle policy。
+- **状态**:✅ 已修。`handleDelete` 现按 `attempt` 做**封顶指数退避**(10s→10min)异步重排(不阻塞消费者),超过 `maxDeleteAttempts=6` 进 `delete:dead` 死信(墓碑);删除目标简化为仅 original(无衍生物)。新增 `S3_LIFECYCLE_DAYS` 对象存储生命周期兜底(config-gated,默认 0)。新增 `parseRetry`/`retryBackoff` 测试。
+- 失败即无退避无限重排,无死信;`objstore` 无 bucket lifecycle policy。
 
 ### APAGE-032 · view_count 异步 flush 与 link 读穿缓存未实现
-- `internal/redisx/redisx.go` 只有 `InvalidateLink`(DEL),无 populate;link 元数据直读 DB;无 view_count 写缓冲落库 worker。
+- **状态**:🟡 大部分已满足。view_count **已异步 flush**(`flushViewCount`→`TouchLinkAccess`);撤销/冻结立即生效(runtime 直读 DB,`InvalidateLink` 失效 Redis cache)。**未做**:link 元数据读穿缓存(populate)—— 当前直读 DB,撤销即时,属性能优化而非正确性问题,暂不引入(避免 cache 一致性 bug)。
+- `internal/redisx/redisx.go` 只有 `InvalidateLink`(DEL),无 populate;link 元数据直读 DB。
 
 ### APAGE-033 · RegisterAgent 忽略 ttl 参数
 - **状态**:✅ 已修(随 [[APAGE-011]])。`RegisterAgent` 现在 `HSet` 后立即 `Expire(key, ttl)`,注册即有 TTL。
 - `internal/redisx/redisx.go` `HSet` 不设过期,key 在首次 `TouchAgent`(+20s)前无 TTL。
 
 ### APAGE-034 · get-instance 报错的协议版本 + 占位 allowlist
-- `internal/api/instances.go:117-126` 返回服务端 floor 当作 `protocolVersion`,allowlist 为硬编码 note,非 agent 上报值。
+- **状态**:✅ 已修。agent 在 connect 帧上报 `allowlist`(workspace 根);gateway 把 agent 真实 `protocolVersion` + allowlist 写入 registry(`RegisterAgent` 改用 `AgentReg` 结构);`LookupAgent` 返回结构体;get-instance 现展示**真实协议版本**(离线/未知时回退 floor)与**agent 上报的 allowlist roots**,而非硬编码。
+- 返回服务端 floor 当作 `protocolVersion`,allowlist 为硬编码 note,非 agent 上报值。
 
 ### APAGE-035 · Lite 套餐过期未裁剪到 24h
 - `internal/api/files.go` 接受任意 `expiresInSeconds`,lite 租户可设 30 天。
@@ -179,7 +185,8 @@
 - 无 admin 服务/鉴权/SSO/MFA;无租户运营端点;`ListAbuseReports` 有 store 方法但无路由。
 
 ### APAGE-038 · API 服务无 /metrics 与业务指标
-- 仅 gateway 暴露连接指标;`agent_online_count`/`tunnel_stream_latency`/`preview_link_access_count` 等未定义;API `MetricsAddr` 配了不用。
+- **状态**:✅ 已修。API 现在用上 `MetricsAddr`(独立内部监听,不暴露在公网 host),`MetricsHandler` 输出 Prometheus 文本:`apage_agent_online_count`、`apage_active_links_count`、`apage_{scan,delete,audit}_queue_depth`、`apage_preview_access_total`(原子计数器,每次预览自增)。新增 store `CountOnlineInstances`/`CountActiveLinks`。
+- 仅 gateway 暴露连接指标;API `MetricsAddr` 配了不用。
 
 ### APAGE-039 · 握手未读 device_fingerprint / capabilities;无 rotating session key
 - agent 发送但 gateway 从不校验;无能力交集协商;`file.metadata` 请求路径全程无人触发(死代码)。

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/apage/apage/internal/audit"
@@ -21,6 +22,11 @@ import (
 func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 	linkID := chi.URLParam(r, "linkId")
 	secret := chi.URLParam(r, "secret")
+
+	// Per-IP throttle on the anonymous runtime to blunt scraping/DoS (spec §19.6).
+	if !s.limit(w, r, "preview:"+httpx.ClientIP(r.Context()), 600, time.Minute) {
+		return
+	}
 
 	link, ok := s.admitLink(w, r, linkID, secret)
 	if !ok {
@@ -161,8 +167,8 @@ func (c *countingWriter) Flush() {
 // looked up from the registry (spec §19.4). Falls back to the configured URL
 // when the registry has no entry (single-box, or registration not yet propagated).
 func (s *Server) resolveGatewayURL(ctx context.Context, instanceID string) string {
-	if _, gwURL, _, online, err := s.rdb.LookupAgent(ctx, instanceID); err == nil && online && gwURL != "" {
-		return gwURL
+	if reg, online, err := s.rdb.LookupAgent(ctx, instanceID); err == nil && online && reg.GatewayURL != "" {
+		return reg.GatewayURL
 	}
 	return s.cfg.GatewayInternalURL
 }
@@ -387,6 +393,7 @@ func (s *Server) flushViewCount(linkID string, n int64) {
 }
 
 func (s *Server) access(linkID, tenantID, instanceID string, r *http.Request) {
+	atomic.AddInt64(&s.previewAccessTotal, 1) // /metrics counter (spec §18)
 	s.audit(context.Background(), audit.Entry{TenantID: tenantID, InstanceID: instanceID,
 		Event: audit.PreviewLinkAccessed, ActorType: audit.ActorAnonymous,
 		ResourceType: "preview_link", ResourceID: linkID,

@@ -91,6 +91,9 @@ func (s *Server) serveActive(w http.ResponseWriter, r *http.Request, link *store
 func (s *Server) handlePreviewRaw(w http.ResponseWriter, r *http.Request) {
 	linkID := chi.URLParam(r, "linkId")
 	secret := chi.URLParam(r, "secret")
+	if !s.limit(w, r, "preview:"+httpx.ClientIP(r.Context()), 600, time.Minute) {
+		return
+	}
 	link, ok := s.admitLink(w, r, linkID, secret)
 	if !ok {
 		return

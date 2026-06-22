@@ -12,6 +12,7 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/minio/minio-go/v7/pkg/lifecycle"
 )
 
 // Store is an S3-compatible object store.
@@ -34,6 +35,9 @@ type Config struct {
 	SecretKey      string
 	UseSSL         bool
 	PresignTTL     time.Duration
+	// LifecycleDays, when >0, installs a bucket lifecycle rule expiring objects
+	// after N days as an orphan-cleanup backstop (spec §19.3).
+	LifecycleDays int
 }
 
 // New connects to the object store and ensures the bucket exists.
@@ -62,6 +66,18 @@ func New(cfg Config) (*Store, error) {
 		if err := cli.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{Region: cfg.Region}); err != nil {
 			return nil, fmt.Errorf("make bucket: %w", err)
 		}
+	}
+	// Orphan-cleanup backstop (spec §19.3). Best-effort: some backends/permissions
+	// do not support lifecycle, which must not block startup.
+	if cfg.LifecycleDays > 0 {
+		lc := lifecycle.NewConfiguration()
+		lc.Rules = []lifecycle.Rule{{
+			ID:         "apage-orphan-backstop",
+			Status:     "Enabled",
+			RuleFilter: lifecycle.Filter{Prefix: ""},
+			Expiration: lifecycle.Expiration{Days: lifecycle.ExpirationDays(cfg.LifecycleDays)},
+		}}
+		_ = cli.SetBucketLifecycle(ctx, cfg.Bucket, lc)
 	}
 	ttl := cfg.PresignTTL
 	if ttl == 0 {
