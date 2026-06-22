@@ -60,7 +60,7 @@ export default function Login() {
         </div>
       )}
       <p style={{ fontSize: 13, marginTop: 16, color: "var(--color-text-muted)" }}>
-        No account? <Link href="/register">Create one</Link>
+        No account? <Link href="/register">Create one</Link> · <Link href="/forgot">Forgot password?</Link>
       </p>
     </AuthShell>
   );

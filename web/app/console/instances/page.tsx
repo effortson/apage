@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, List, ApiException, idemKey } from "@/lib/api";
+import { usePoll } from "@/lib/hooks";
 import { Button, Table, Td, StatusDot, Badge, Drawer, Input, Select, EmptyState, Skeleton, SecretReveal, CopyField, CodeBlock, useToast, ConfirmDialog } from "@/components/ui";
 import { relativeTime } from "@/lib/format";
 
@@ -14,6 +15,7 @@ export default function Instances() {
 
   const load = () => api<List<any>>("/instances?limit=50").then((r) => { setItems(r.items || []); setLoading(false); });
   useEffect(() => { load().catch(() => setLoading(false)); }, []);
+  usePoll(() => { load().catch(() => {}); }, 5000); // reflect online status ≤5s (UI §4.5)
 
   return (
     <div>

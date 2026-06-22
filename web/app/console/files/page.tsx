@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { api, List, getTenant } from "@/lib/api";
+import { usePoll } from "@/lib/hooks";
 import { Button, Table, Td, Badge, EmptyState, Skeleton, useToast, ConfirmDialog, statusTone, Select } from "@/components/ui";
 import { relativeTime, formatBytes } from "@/lib/format";
 
@@ -18,6 +19,7 @@ export default function Files() {
     load().catch(() => setLoading(false));
     api<List<any>>("/instances?limit=50").then((r) => { setInstances(r.items || []); if (r.items?.[0]) setInstanceId(r.items[0].instanceId); });
   }, []);
+  usePoll(() => { load().catch(() => {}); }, 5000); // scanning → ready reflects without manual refresh
 
   async function upload(file: File) {
     if (!instanceId) { toast({ tone: "danger", msg: "Create an instance first" }); return; }

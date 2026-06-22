@@ -200,7 +200,8 @@
 ## P3 — 前端
 
 ### APAGE-050 · 无实时层(违反撤销/在线 ≤5s)
-- 无 SSE/WS/轮询;仅 `web/app/console/files/page.tsx:31` 一次性 `setTimeout`。
+- **状态**:✅ 已修(轮询)。新增 `usePoll` hook(标签页隐藏时暂停),接到 instances/links/files 列表(5s),实例在线/链接撤销冻结/文件 scanning→ready 均 ≤5s 反映,替换原一次性 setTimeout。
+- 无 SSE/WS/轮询;仅一次性 `setTimeout`。
 
 ### APAGE-051 · Settings 为占位
 - 大部分静态卡片;无租户资料编辑;安全卡仅跳转 Instances;**危险区无删除租户按钮**;只接了数据删除请求。`web/app/console/settings/page.tsx`
@@ -209,16 +210,18 @@
 - 指标硬编码 `"—"`,无 API/鉴权/交互。`web/app/admin/page.tsx:21-24`
 
 ### APAGE-053 · 缺 OAuth / 邮箱验证 / 忘记密码页
-- 无 `/verify`、`/forgot` 路由;登录限流仅以通用错误呈现。
+- **状态**:✅ 已修。新增 `/verify`(token 验证 + 重发)、`/forgot`(防枚举,恒成功提示)、`/reset`(token + 新密码)页,接已有 verify-email/resend/forgot/reset 后端;login 页加 OAuth 按钮(021)+ "Forgot password?" 链接。
+- 无 `/verify`、`/forgot` 路由。
 
 ### APAGE-054 · 导航不按 RBAC 隐藏
-- session 带 `role` 但只展示,9 个导航对所有角色全显。`web/app/console/layout.tsx:75`
+- **状态**:✅ 已修。console 布局按当前租户 role 过滤导航(viewer/member/admin/owner 分级,镜像后端 RBAC):域名/审计/用量需 admin,成员/设置需 member。
+- session 带 `role` 但只展示,9 个导航对所有角色全显。
 
 ### APAGE-055 · 无真正 i18n
 - 硬编码英文,`lang="en"` 固定;数字未本地化。
 
 ### APAGE-056 · 组件库 ~18/28 + Modal/Drawer 无焦点陷阱
-- 缺 IconButton/Combobox/Checkbox/Radio/Switch/Tag/Pagination/Tabs/Tooltip/DateRange;分页是临时 "Load more";Modal/Drawer 无 focus trap/Esc/aria-modal。`web/components/ui.tsx:225-263`
+- **状态**:🟡 部分修(a11y 已补)。`useDialogA11y`:Modal/Drawer 现有**焦点陷阱 + Esc 关闭 + 焦点还原 + `role=dialog`/`aria-modal`**。**仍待**:补齐 IconButton/Tag/Tabs/Tooltip/DateRange 等组件(按页面实际需要增量加,如 DateRange 随 [[APAGE-058]] 审计)。
 
 ### APAGE-057 · Usage 页缺趋势图/计费/升级,无 RBAC 拆分
 - 仅进度条;无图表/计费信息/升级 CTA/配额 Banner。`web/app/console/usage/page.tsx`

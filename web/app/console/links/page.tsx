@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, List, ApiException, idemKey } from "@/lib/api";
+import { usePoll } from "@/lib/hooks";
 import { Button, Table, Td, Badge, Drawer, Input, Select, EmptyState, Skeleton, SecretReveal, useToast, ConfirmDialog, statusTone } from "@/components/ui";
 import { relativeTime, absoluteTime } from "@/lib/format";
 
@@ -31,6 +32,7 @@ export default function Links() {
     });
   };
   useEffect(() => { setLoading(true); load(true).catch(() => setLoading(false)); /* eslint-disable-next-line */ }, [filter]);
+  usePoll(() => { load(true).catch(() => {}); }, 5000); // revoke/freeze reflects ≤5s (UI §4.5)
 
   return (
     <div>

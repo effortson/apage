@@ -1,8 +1,52 @@
 "use client";
 // APAGE shared component library (UI spec §3). Variants and key states per spec.
-import React, { useState, createContext, useContext, useCallback } from "react";
+import React, { useState, useEffect, useRef, createContext, useContext, useCallback } from "react";
 
 type CSS = React.CSSProperties;
+
+// useDialogA11y traps focus inside an overlay, closes on Escape, and restores
+// focus to the trigger on unmount (UI §10 accessibility / focus trap).
+function useDialogA11y(onClose: () => void) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = ref.current;
+    const prev = document.activeElement as HTMLElement | null;
+    const focusables = () =>
+      node
+        ? Array.from(
+            node.querySelectorAll<HTMLElement>(
+              'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea,[tabindex]:not([tabindex="-1"])',
+            ),
+          )
+        : [];
+    (focusables()[0] || node)?.focus();
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key === "Tab") {
+        const items = focusables();
+        if (items.length === 0) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      prev?.focus?.();
+    };
+  }, [onClose]);
+  return ref;
+}
 
 // ---------- Button ----------
 export function Button({
@@ -223,9 +267,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
 // ---------- Modal / ConfirmDialog (danger variant, UI §4.2) ----------
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  const ref = useDialogA11y(onClose);
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 900 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--color-bg)", borderRadius: "var(--radius-lg)", padding: "var(--space-5)", width: 460, maxWidth: "90vw", boxShadow: "var(--shadow-lg)", border: "1px solid var(--color-border)" }}>
+      <div ref={ref} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} onClick={(e) => e.stopPropagation()} style={{ background: "var(--color-bg)", borderRadius: "var(--radius-lg)", padding: "var(--space-5)", width: 460, maxWidth: "90vw", boxShadow: "var(--shadow-lg)", border: "1px solid var(--color-border)", outline: "none" }}>
         <h2 style={{ marginBottom: "var(--space-4)" }}>{title}</h2>
         {children}
       </div>
@@ -249,9 +294,10 @@ export function ConfirmDialog({ title, message, confirmWord, onConfirm, onCancel
 
 // ---------- Drawer ----------
 export function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  const ref = useDialogA11y(onClose);
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 900 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: 480, maxWidth: "92vw", background: "var(--color-bg)", borderLeft: "1px solid var(--color-border)", padding: "var(--space-5)", overflowY: "auto", boxShadow: "var(--shadow-lg)" }}>
+      <div ref={ref} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: 480, maxWidth: "92vw", background: "var(--color-bg)", borderLeft: "1px solid var(--color-border)", padding: "var(--space-5)", overflowY: "auto", boxShadow: "var(--shadow-lg)", outline: "none" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-4)" }}>
           <h2>{title}</h2>
           <button onClick={onClose} aria-label="close" style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--color-text-muted)" }}>✕</button>

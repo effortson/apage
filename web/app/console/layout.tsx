@@ -11,16 +11,19 @@ type Session = {
   tenants: { tenantId: string; name: string; plan: string; role: string }[];
 };
 
-const nav = [
-  ["Overview", "/console"],
-  ["Instances", "/console/instances"],
-  ["Preview Links", "/console/links"],
-  ["Cloud Files", "/console/files"],
-  ["Custom Domains", "/console/domains"],
-  ["Audit Logs", "/console/audit"],
-  ["Usage & Billing", "/console/usage"],
-  ["Members", "/console/members"],
-  ["Settings", "/console/settings"],
+const roleRank: Record<string, number> = { viewer: 0, member: 1, admin: 2, owner: 3 };
+
+// Nav with the minimum role each surface requires (mirrors backend RBAC, UI §7).
+const nav: [string, string, string][] = [
+  ["Overview", "/console", "viewer"],
+  ["Instances", "/console/instances", "viewer"],
+  ["Preview Links", "/console/links", "viewer"],
+  ["Cloud Files", "/console/files", "viewer"],
+  ["Custom Domains", "/console/domains", "admin"],
+  ["Audit Logs", "/console/audit", "admin"],
+  ["Usage & Billing", "/console/usage", "admin"],
+  ["Members", "/console/members", "member"],
+  ["Settings", "/console/settings", "member"],
 ];
 
 export default function ConsoleLayout({ children }: { children: React.ReactNode }) {
@@ -45,13 +48,15 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
 
   if (!session) return <div style={{ padding: 40 }}>Loading…</div>;
   const current = session.tenants.find((x) => x.tenantId === tenant);
+  const rank = roleRank[current?.role || "viewer"] ?? 0;
+  const visibleNav = nav.filter(([, , min]) => rank >= (roleRank[min] ?? 0));
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <aside style={{ width: 240, borderRight: "1px solid var(--color-border)", padding: "var(--space-4)", background: "var(--color-bg-subtle)" }}>
         <div style={{ fontWeight: 700, fontSize: 18, marginBottom: "var(--space-5)" }}>APAGE</div>
         <nav>
-          {nav.map(([label, href]) => {
+          {visibleNav.map(([label, href]) => {
             const active = pathname === href;
             return (
               <Link key={href} href={href} style={{
