@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -72,6 +73,29 @@ func (s *Store) SetDomainStatus(ctx context.Context, domainID, status, certStatu
 		`UPDATE custom_domains SET status=$2, cert_status=$3, last_checked_at=now() WHERE domain_id=$1`,
 		domainID, status, certStatus)
 	return err
+}
+
+// DomainsToRecheck returns verified/pending domains whose DNS has not been
+// re-checked since staleBefore, across all tenants (periodic re-verification,
+// spec §28 定期检查). Capped by limit.
+func (s *Store) DomainsToRecheck(ctx context.Context, staleBefore time.Time, limit int) ([]CustomDomain, error) {
+	rows, err := s.Pool.Query(ctx, domainSelect+
+		` WHERE status IN ('verified','pending') AND (last_checked_at IS NULL OR last_checked_at < $1)
+		  ORDER BY last_checked_at ASC NULLS FIRST LIMIT $2`, staleBefore, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CustomDomain
+	for rows.Next() {
+		var d CustomDomain
+		if err := rows.Scan(&d.DomainID, &d.TenantID, &d.Domain, &d.Status, &d.TXTValue,
+			&d.CertStatus, &d.LastCheckedAt, &d.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }
 
 // DeleteDomain removes a custom domain.

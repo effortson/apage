@@ -60,7 +60,7 @@
 
 ## P1 — 标称完成但实为 stub / 缺失
 
-> **进度(branch `fix/p0-security`)**:已修 **012 / 013 / 014 / 015 / 016 / 017 / 018 / 020**(✅),**019 / 022 部分**(🟡),并附带修 P2 的 [[APAGE-035]](lite 文件过期裁剪)。均通过 `go build`/`go vet`/`go test -race`(新增 agent range、gateway version、path size、billing 等测试 + migration 0002)。**仍未动**(需外部服务或对现有 tunnel e2e 有回归风险):010 背压(需 credit 协议)、011 registry 路由(多 gateway 基建)、021 OAuth(需 provider 凭据)、023 ACME(需外部)、024 Office 转换(需 LibreOffice 容器)。
+> **进度(branch `fix/p0-security`)**:已修 **012 / 013 / 014 / 015 / 016 / 017 / 018 / 020**(✅),**019 / 022 部分**(🟡),并附带修 P2 的 [[APAGE-035]](lite 文件过期裁剪)。均通过 `go build`/`go vet`/`go test -race`(新增 agent range、gateway version、path size、billing 等测试 + migration 0002)。**023 的 DNS 部分**(CNAME 校验 + 周期 recheck)亦已修,ACME 签发仍待外部。**仍未动**(需外部服务或对现有 tunnel e2e 有回归风险):010 背压(需 credit 协议)、011 registry 路由(多 gateway 基建)、021 OAuth(需 provider 凭据)、023 ACME 签发(需真实域名)、024 Office 转换(需 LibreOffice 容器)。
 
 ### APAGE-010 · Tunnel 背压是假的
 - **现状**:仅 cap=8 的 Go channel,agent 全速读文件推二进制帧,无 window/credit 流控;大文件仍可撑爆 gateway 内存。注释"bounded buffer applies backpressure"系一厢情愿。
@@ -138,6 +138,7 @@
 - **修复**:发布脚本 + 签名校验 + gateway 强制最低 agentVersion。
 
 ### APAGE-023 · 自定义域名 ACME/CNAME/周期校验不实
+- **状态**:🟡 大部分修(ACME 仍 TODO)。`handleVerifyDomain` 现校验 **TXT(所有权)+ CNAME(路由)**,返回 expected-vs-observed 诊断(UI §7.5);**不再假报 `cert=issued`** —— 路由确认后置 `cert=pending`(注明 ACME 签发为 `TODO(prod)`)。worker 新增 `domainRecheckLoop`(每 30min,12h stale):TXT 消失则回退 `failed` + 审计(spec §28 定期检查)。新增 `DomainsToRecheck` store 方法、`normalizeHost` + 测试。**仍待**:ACME 自动签发/续期(需真实域名 + ACME client)。
 - **现状**:仅 TXT 查询真实;CNAME 展示但不校验;cert 直接置 `issued`(无 ACME client);无周期 re-verify。
 - **证据**:`internal/api/domains.go:107-110`、`internal/api/health.go:32`
 - **修复**:接 ACME(autocert/lego)+ CNAME 校验 + 续期 worker。

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -44,7 +45,56 @@ func (w *Worker) Run(ctx context.Context) {
 	go w.consume(ctx, "audit", w.handleAudit)
 	go w.sweepLoop(ctx)
 	go w.usageFlushLoop(ctx)
+	go w.domainRecheckLoop(ctx)
 	<-ctx.Done()
+}
+
+// domainRecheckLoop periodically re-verifies custom-domain ownership and reverts
+// domains whose TXT record has disappeared (spec §28 定期检查).
+func (w *Worker) domainRecheckLoop(ctx context.Context) {
+	t := time.NewTicker(30 * time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			w.recheckDomains(ctx)
+		}
+	}
+}
+
+func (w *Worker) recheckDomains(ctx context.Context) {
+	domains, err := w.db.DomainsToRecheck(ctx, time.Now().Add(-12*time.Hour), 50)
+	if err != nil {
+		w.log.Warn("domain recheck list", "err", err)
+		return
+	}
+	for _, d := range domains {
+		if txtRecordPresent(d.Domain, d.TXTValue) {
+			_ = w.db.SetDomainStatus(ctx, d.DomainID, d.Status, d.CertStatus) // refresh last_checked_at
+			continue
+		}
+		// Ownership TXT gone: revert to failed and audit (spec §28).
+		_ = w.db.SetDomainStatus(ctx, d.DomainID, "failed", "none")
+		_ = w.db.WriteAudit(ctx, audit.Entry{TenantID: d.TenantID, Event: audit.CustomDomainFailed,
+			ActorType: audit.ActorSystem, ResourceType: "custom_domain", ResourceID: d.DomainID, Reason: "txt_record_missing"})
+		w.log.Info("custom domain reverted (txt missing)", "domain", d.Domain)
+	}
+}
+
+// txtRecordPresent reports whether the ownership TXT record is still published.
+func txtRecordPresent(domain, expected string) bool {
+	records, err := net.LookupTXT("_apage." + domain)
+	if err != nil {
+		return false
+	}
+	for _, rec := range records {
+		if strings.TrimSpace(rec) == expected {
+			return true
+		}
+	}
+	return false
 }
 
 // usageFlushLoop periodically drains the Redis usage buffer to the DB so the hot

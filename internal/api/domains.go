@@ -91,8 +91,11 @@ func (s *Server) handleGetDomain(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleVerifyDomain triggers a DNS check + ACME issuance (spec §28).
-// MVP performs a best-effort TXT lookup; full ACME is a V1 worker concern.
+// handleVerifyDomain checks DNS ownership (TXT) and routing (CNAME) and records
+// the result (spec §28). TXT proves ownership; CNAME proves the domain routes to
+// our edge. Certificate issuance requires ACME, which is a production worker
+// concern (TODO(prod)); cert_status reflects "pending" once routing is in place
+// rather than falsely reporting "issued".
 func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 	au := requireRole(w, r, "admin")
 	if au == nil {
@@ -103,16 +106,30 @@ func (s *Server) handleVerifyDomain(w http.ResponseWriter, r *http.Request) {
 		httpx.NotFound(w, r)
 		return
 	}
-	verified := s.checkDomainTXT(d.Domain, d.TXTValue)
-	status, cert := "failed", "failed"
-	event := audit.CustomDomainFailed
-	if verified {
-		status, cert, event = "verified", "issued", audit.CustomDomainVerified
+	expectedCNAME := au.TenantID + "." + s.cfg.BaseDomain
+	txtOk := s.checkDomainTXT(d.Domain, d.TXTValue)
+	observedCNAME, cnameOk := s.checkDomainCNAME(d.Domain, expectedCNAME)
+
+	status, cert, event := "failed", "none", audit.CustomDomainFailed
+	if txtOk {
+		status, event = "verified", audit.CustomDomainVerified
+		if cnameOk {
+			cert = "pending" // routing confirmed; awaiting ACME issuance (TODO(prod))
+		}
 	}
 	_ = s.db.SetDomainStatus(r.Context(), d.DomainID, status, cert)
 	s.audit(r.Context(), audit.Entry{TenantID: au.TenantID, Event: event,
 		ActorType: audit.ActorUser, ActorID: au.UserID, ResourceType: "custom_domain", ResourceID: d.DomainID})
-	httpx.JSON(w, http.StatusOK, map[string]any{"domainId": d.DomainID, "status": status, "certStatus": cert})
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"domainId":   d.DomainID,
+		"status":     status,
+		"certStatus": cert,
+		// Expected-vs-observed for the frontend failure diagnosis (UI §7.5).
+		"checks": map[string]any{
+			"txt":   map[string]any{"name": "_apage." + d.Domain, "expected": d.TXTValue, "ok": txtOk},
+			"cname": map[string]any{"name": d.Domain, "expected": expectedCNAME, "observed": observedCNAME, "ok": cnameOk},
+		},
+	})
 }
 
 // handleDeleteDomain removes a custom domain (spec §28).
