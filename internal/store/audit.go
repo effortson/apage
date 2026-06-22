@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/apage/apage/internal/audit"
 	"github.com/apage/apage/internal/httpx"
@@ -19,6 +20,19 @@ func (s *Store) WriteAudit(ctx context.Context, e audit.Entry) error {
 		id.New(id.PrefixAudit), e.TenantID, e.InstanceID, e.Event, e.ActorType, e.ActorID,
 		e.ResourceType, e.ResourceID, e.IP, e.UserAgent, e.Reason)
 	return err
+}
+
+// PurgeOldAudit deletes audit records older than `before`, returning the count
+// (retention enforcement, spec §11/§15.6). Capped per call to bound lock time.
+func (s *Store) PurgeOldAudit(ctx context.Context, before time.Time, limit int) (int64, error) {
+	tag, err := s.Pool.Exec(ctx,
+		`DELETE FROM audit_logs WHERE event_id IN (
+		   SELECT event_id FROM audit_logs WHERE created_at < $1 ORDER BY created_at ASC LIMIT $2
+		 )`, before, limit)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 const auditSelect = `SELECT event_id,COALESCE(tenant_id,''),COALESCE(instance_id,''),event,actor_type,

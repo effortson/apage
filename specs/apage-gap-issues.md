@@ -153,7 +153,7 @@
 
 ## P2 — 生产纵深
 
-> **进度(branch `fix/p0-security`)**:已修 **030 / 031 / 033 / 034 / 035 / 038**(✅),**032 大部分满足**(🟡)。**剩余**:036 合规(审计保留可做,数据驻留需多 region 基建)、037 Admin 后端(独立服务 + SSO/MFA,需决策)、039 握手硬化(capabilities/fingerprint,部分可做)、040 测试覆盖/audit 分区。
+> **进度(branch `fix/p0-security`)**:已修 **030 / 031 / 033 / 034 / 035 / 038**(✅)+ **036 审计保留 / 039 能力协商**(🟡 大部分),**032 大部分满足**(🟡)。**剩余**:036 数据驻留/EU(需多 region 基建)、037 Admin 后端(独立服务 + SSO/MFA,需决策)、039 rotating session key、040 audit 分区(需对已应用 migration 动刀)+ 测试覆盖。
 
 ### APAGE-030 · 通用 API 限流缺失(仅 auth 有)
 - **状态**:✅ 已修。新增 `dataWriteRateLimit` 中间件:数据面写接口按租户限流 300/min(只限非安全方法,读/列表放行);访客 runtime(`handlePreview` + `handlePreviewRaw`)按源 IP 限流 600/min。配合已有的 link-create(按 trust)/unlock/abuse 限流。
@@ -179,7 +179,7 @@
 - `internal/api/files.go` 接受任意 `expiresInSeconds`,lite 租户可设 30 天。
 
 ### APAGE-036 · 合规大面积缺失
-- 无数据驻留/EU-only(单一全局 `S3Region`);无审计 90 天保留/匿名化/清除;无数据流向/子处理方披露。GDPR/CCPA 删除已做(`internal/store/compliance.go:41`)。
+- **状态**:🟡 部分修。**审计保留已落地**:worker `auditRetentionLoop` 每日按 `AUDIT_RETENTION_DAYS`(默认 90)分批 `PurgeOldAudit` 清除到期审计日志(spec §11/§15.6);GDPR/CCPA 删除此前已做。**仍待(需基建/产品)**:数据驻留 / EU-only(需多 region,单一全局 `S3Region`)、数据流向/子处理方披露(静态合规文案,属产品/法务)。
 
 ### APAGE-037 · Admin 后端不存在
 - 无 admin 服务/鉴权/SSO/MFA;无租户运营端点;`ListAbuseReports` 有 store 方法但无路由。
@@ -189,8 +189,8 @@
 - 仅 gateway 暴露连接指标;API `MetricsAddr` 配了不用。
 
 ### APAGE-039 · 握手未读 device_fingerprint / capabilities;无 rotating session key
-- agent 发送但 gateway 从不校验;无能力交集协商;`file.metadata` 请求路径全程无人触发(死代码)。
-- `internal/gateway/server.go:86-89`、`internal/agent/tunnel.go:70,115`
+- **状态**:🟡 大部分修。gateway 握手现做**能力协商**:要求 agent 支持 `file.stream`(否则 `CAPABILITY_UNSUPPORTED` 拒绝),并记录 agent×gateway 的能力交集;`device_fingerprint` 在连接日志中记录(仅检测、不持久化/不追踪,spec 口径)。新增 `negotiatedCaps` 测试。**仍待**:rotating session key(更复杂,需协议改动);`file.metadata` 请求路径仍未触发(元数据走 Postgres,该 agent 端 handler 为冗余,留作 capability 占位)。
+- agent 发送但 gateway 从不校验;无能力交集协商。
 
 ### APAGE-040 · 测试覆盖薄 + audit_logs 未分区
 - 17 个包仅 3 个有测试(agent/api/hash);gateway/store/redisx/worker/tunnel/objstore 无测试。`audit_logs` 单表未按 tenant/created 分区(§19.7)。

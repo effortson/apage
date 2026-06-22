@@ -91,6 +91,12 @@ func (s *Server) handleAgentConnect(w http.ResponseWriter, r *http.Request) {
 		_ = conn.Close()
 		return
 	}
+	// Capability negotiation (spec §7): the agent must support file.stream.
+	if !hasCapability(cf.Capabilities, "file.stream") {
+		_ = conn.WriteJSON(tunnel.Frame{Type: tunnel.TypeReject, Error: &tunnel.Error{Code: "CAPABILITY_UNSUPPORTED", Message: "agent must support file.stream"}})
+		_ = conn.Close()
+		return
+	}
 	// Authenticate by agent token, which uniquely identifies the instance
 	// (spec §7). cf.InstanceID is the agent's local label and is not trusted;
 	// the instance is resolved from the token.
@@ -130,7 +136,10 @@ func (s *Server) handleAgentConnect(w http.ResponseWriter, r *http.Request) {
 	go sess.heartbeat()
 	go s.registryRefresher(in.InstanceID, sess)
 
-	s.log.Info("agent connected", "instance", in.InstanceID, "session", sessionID, "version", cf.AgentVersion)
+	// device_fingerprint is logged for anomaly detection only (not persisted or
+	// used to track, spec §"device_fingerprint 仅检测不追踪").
+	s.log.Info("agent connected", "instance", in.InstanceID, "session", sessionID,
+		"version", cf.AgentVersion, "capabilities", negotiatedCaps(cf.Capabilities), "fingerprint", cf.DeviceFingerprint)
 	sess.readLoop(func() {
 		s.mu.Lock()
 		if cur, ok := s.sessions[in.InstanceID]; ok && cur == sess {
@@ -144,6 +153,30 @@ func (s *Server) handleAgentConnect(w http.ResponseWriter, r *http.Request) {
 			Event: audit.AgentDisconnected, ActorType: audit.ActorInstanceAPIKey, ActorID: in.InstanceID})
 		s.log.Info("agent disconnected", "instance", in.InstanceID)
 	})
+}
+
+// gatewayCapabilities are the tunnel capabilities this gateway supports (spec §7).
+var gatewayCapabilities = []string{"file.stream", "file.metadata"}
+
+func hasCapability(caps []string, want string) bool {
+	for _, c := range caps {
+		if c == want {
+			return true
+		}
+	}
+	return false
+}
+
+// negotiatedCaps is the intersection of the agent's and the gateway's
+// capabilities (spec §7 能力交集协商).
+func negotiatedCaps(agentCaps []string) []string {
+	var out []string
+	for _, g := range gatewayCapabilities {
+		if hasCapability(agentCaps, g) {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 // versionAtLeast reports whether dotted-numeric version v is >= min. An empty

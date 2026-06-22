@@ -52,7 +52,7 @@ func main() {
 		obj = o
 	}
 
-	w := worker.New(db, rdb, obj, log)
+	w := worker.New(db, rdb, obj, log, cfg.AuditRetentionDays)
 	log.Info("apage-worker started")
 	w.Run(ctx)
 	log.Info("apage-worker stopped")

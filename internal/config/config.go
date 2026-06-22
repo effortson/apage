@@ -58,6 +58,9 @@ type Config struct {
 	// Abuse governance (spec §15.5, V1)
 	SafeBrowsingAPIKey string
 
+	// AuditRetentionDays: audit logs older than this are purged (spec §11/§15.6).
+	AuditRetentionDays int
+
 	// OAuth providers (spec §25). Empty client id/secret => provider disabled.
 	OAuthRedirectBase   string // base URL for the callback redirect_uri (default https://<ConsoleDomain>)
 	OAuthGitHubClientID string
@@ -111,6 +114,7 @@ func Load() (*Config, error) {
 		SMTPPass:                env("SMTP_PASS", ""),
 		MailFrom:                env("MAIL_FROM", "no-reply@apage.local"),
 		SafeBrowsingAPIKey:      env("SAFE_BROWSING_API_KEY", ""),
+		AuditRetentionDays:      envInt("AUDIT_RETENTION_DAYS", 90),
 		OAuthRedirectBase:       env("OAUTH_REDIRECT_BASE", ""),
 		OAuthGitHubClientID:     env("OAUTH_GITHUB_CLIENT_ID", ""),
 		OAuthGitHubSecret:       env("OAUTH_GITHUB_CLIENT_SECRET", ""),

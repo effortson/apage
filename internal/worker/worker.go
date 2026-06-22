@@ -27,15 +27,16 @@ type ObjectStore interface {
 
 // Worker drains queues and runs periodic sweeps.
 type Worker struct {
-	db  *store.Store
-	rdb *redisx.Client
-	obj ObjectStore
-	log *slog.Logger
+	db                 *store.Store
+	rdb                *redisx.Client
+	obj                ObjectStore
+	log                *slog.Logger
+	auditRetentionDays int
 }
 
-// New builds a worker.
-func New(db *store.Store, rdb *redisx.Client, obj ObjectStore, log *slog.Logger) *Worker {
-	return &Worker{db: db, rdb: rdb, obj: obj, log: log}
+// New builds a worker. auditRetentionDays<=0 disables audit-log purging.
+func New(db *store.Store, rdb *redisx.Client, obj ObjectStore, log *slog.Logger, auditRetentionDays int) *Worker {
+	return &Worker{db: db, rdb: rdb, obj: obj, log: log, auditRetentionDays: auditRetentionDays}
 }
 
 // Run starts the queue consumers and sweep loop until ctx is cancelled.
@@ -46,7 +47,46 @@ func (w *Worker) Run(ctx context.Context) {
 	go w.sweepLoop(ctx)
 	go w.usageFlushLoop(ctx)
 	go w.domainRecheckLoop(ctx)
+	go w.auditRetentionLoop(ctx)
 	<-ctx.Done()
+}
+
+// auditRetentionLoop purges audit logs past the retention window once a day
+// (spec §11/§15.6: 90-day adjustable retention then purge).
+func (w *Worker) auditRetentionLoop(ctx context.Context) {
+	if w.auditRetentionDays <= 0 {
+		return // retention disabled
+	}
+	t := time.NewTicker(24 * time.Hour)
+	defer t.Stop()
+	w.purgeAudit(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			w.purgeAudit(ctx)
+		}
+	}
+}
+
+func (w *Worker) purgeAudit(ctx context.Context) {
+	before := time.Now().AddDate(0, 0, -w.auditRetentionDays)
+	var total int64
+	for { // delete in bounded batches to avoid long locks
+		n, err := w.db.PurgeOldAudit(ctx, before, 5000)
+		if err != nil {
+			w.log.Warn("audit purge", "err", err)
+			return
+		}
+		total += n
+		if n < 5000 {
+			break
+		}
+	}
+	if total > 0 {
+		w.log.Info("purged expired audit logs", "count", total, "olderThanDays", w.auditRetentionDays)
+	}
 }
 
 // domainRecheckLoop periodically re-verifies custom-domain ownership and reverts
