@@ -32,6 +32,12 @@ const (
 	TakedownReceived      = "takedown.received"
 	TakedownActioned      = "takedown.actioned"
 
+	// Platform admin actions (spec §8).
+	AdminLogin         = "admin.login"
+	TenantTrustChanged = "tenant.trust_changed"
+	TenantRestored     = "tenant.restored"
+	AbuseActioned      = "abuse.actioned"
+
 	// Account lifecycle.
 	UserRegistered     = "user.registered"
 	MemberInvited      = "member.invited"
@@ -47,6 +53,7 @@ const (
 	ActorInstanceAPIKey = "instance_api_key"
 	ActorSystem         = "system"
 	ActorAnonymous      = "anonymous"
+	ActorAdmin          = "admin"
 )
 
 // Entry is a single audit record awaiting persistence.

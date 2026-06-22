@@ -153,7 +153,7 @@
 
 ## P2 — 生产纵深
 
-> **进度(branch `fix/p0-security`)**:已修 **030 / 031 / 033 / 034 / 035 / 038**(✅)+ **036 审计保留 / 039 能力协商**(🟡 大部分),**032 大部分满足**(🟡)。**剩余**:036 数据驻留/EU(需多 region 基建)、037 Admin 后端(独立服务 + SSO/MFA,需决策)、039 rotating session key、040 audit 分区(需对已应用 migration 动刀)+ 测试覆盖。
+> **进度(branch `fix/p0-security`)**:已修 **030 / 031 / 033 / 034 / 035 / 037 / 038**(✅)+ **036 审计保留 / 039 能力协商 / 040 测试**(🟡 大部分),**032 大部分满足**(🟡)。**剩余(均需外部/基建)**:036 数据驻留/EU(多 region)、037 企业 SSO(外部 IdP)、039 rotating session key、040 audit 分区(对已应用 migration 动刀)。
 
 ### APAGE-030 · 通用 API 限流缺失(仅 auth 有)
 - **状态**:✅ 已修。新增 `dataWriteRateLimit` 中间件:数据面写接口按租户限流 300/min(只限非安全方法,读/列表放行);访客 runtime(`handlePreview` + `handlePreviewRaw`)按源 IP 限流 600/min。配合已有的 link-create(按 trust)/unlock/abuse 限流。
@@ -182,7 +182,7 @@
 - **状态**:🟡 部分修。**审计保留已落地**:worker `auditRetentionLoop` 每日按 `AUDIT_RETENTION_DAYS`(默认 90)分批 `PurgeOldAudit` 清除到期审计日志(spec §11/§15.6);GDPR/CCPA 删除此前已做。**仍待(需基建/产品)**:数据驻留 / EU-only(需多 region,单一全局 `S3Region`)、数据流向/子处理方披露(静态合规文案,属产品/法务)。
 
 ### APAGE-037 · Admin 后端不存在
-- 无 admin 服务/鉴权/SSO/MFA;无租户运营端点;`ListAbuseReports` 有 store 方法但无路由。
+- **状态**:✅ 已修(平台 admin 后端 + 最小前端)。**鉴权**:独立 `platform_admins`(migration 0003)+ 密码(argon2id)+ **强制 TOTP MFA**(自实现 RFC 6238,`internal/totp`,首登强制 enroll)+ **IP allowlist** gate;独立 admin session(Redis,SameSite=Strict)。**运营端点**(`/admin/v1/*`,全部审计、仅元数据):overview、租户 list/detail、trust 变更、suspend/restore(冻结全租户链接 + 失效缓存 + 阻止建链=真有牙)、abuse 队列 list/action(接上原孤儿 `ListAbuseReports`)、跨租户 audit 检索。**前端**:`/admin` 页接上登录+MFA+overview+租户 suspend/restore/trust。bootstrap 用 `ADMIN_BOOTSTRAP_*` 播种首个 admin;Caddy 加 `admin.localhost`(转发真实 IP 给 allowlist)。新增 `totp_test`。**仍待**:企业 SSO(SAML/OIDC,需外部 IdP);独立物理服务/网络隔离(部署演进);富 admin UI 面板(系统健康/SLO/域名运维,属 [[APAGE-052]] 前端)。
 
 ### APAGE-038 · API 服务无 /metrics 与业务指标
 - **状态**:✅ 已修。API 现在用上 `MetricsAddr`(独立内部监听,不暴露在公网 host),`MetricsHandler` 输出 Prometheus 文本:`apage_agent_online_count`、`apage_active_links_count`、`apage_{scan,delete,audit}_queue_depth`、`apage_preview_access_total`(原子计数器,每次预览自增)。新增 store `CountOnlineInstances`/`CountActiveLinks`。

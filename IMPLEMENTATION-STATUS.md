@@ -52,7 +52,7 @@ point) · ⬜ deferred production-hardening (spec §21 defers these).
 - ✅ Abuse report endpoint (§30/§15.5) + audit + queue; 🟡 admin processing/freeze workflow partial
 - ✅ Compliance data deletion (§15.6); region residency is config-level
 - ❌ Office conversion (§13): **out of scope** — APAGE is view-only (no in-browser editing); office documents are not converted or accepted (rejected at the MIME allowlist)
-- 🟡 Admin console (§8): frontend shell + documented surfaces; ⬜ platform SSO+MFA auth, live wiring (spec §21: admin post-MVP)
+- ✅ Admin console (§8): platform-admin backend — password + mandatory TOTP MFA + IP allowlist, tenant list/detail/trust/suspend/restore (with link-freeze teeth), abuse queue + actioning, cross-tenant audit, overview; admin login + overview/tenant UI wired. 🟡 enterprise SSO (SAML/OIDC) is the deferred IdP integration
 
 ## Deferred (spec §21 "暂缓" / external services)
 - ⬜ Admin SSO + MFA platform auth, network isolation

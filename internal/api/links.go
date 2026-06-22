@@ -70,6 +70,10 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) {
 	// the link lifetime (spec §15.5 信任分级 / §11 three-layer expiry).
 	trust, plan := "new", "lite"
 	if t, err := s.db.TenantByID(r.Context(), sc.TenantID); err == nil {
+		if t.Status == "suspended" {
+			httpx.Forbidden(w, r, "tenant is suspended")
+			return
+		}
 		if t.TrustLevel != "" {
 			trust = t.TrustLevel
 		}

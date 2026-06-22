@@ -71,6 +71,7 @@ func main() {
 		objIface = obj
 	}
 	srv := api.New(cfg, db, rdb, log, mailer, gw, objIface)
+	srv.BootstrapAdmin(ctx) // seed the first platform admin from config (spec §8)
 
 	httpSrv := &http.Server{
 		Addr:              cfg.APIAddr,

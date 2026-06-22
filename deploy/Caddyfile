@@ -11,6 +11,15 @@ console.localhost, localhost {
 	reverse_proxy api:8080
 }
 
+# Platform admin plane (spec §8) — separate host. Forward the real client IP so
+# the admin IP allowlist sees the true source. In production restrict this host
+# at the network edge and serve the admin SPA here.
+admin.localhost {
+	reverse_proxy api:8080 {
+		header_up X-Forwarded-For {remote_host}
+	}
+}
+
 # Agent tunnel endpoint (WebSocket upgrade) — routed to the gateway.
 # In production this is a dedicated agent LB (spec §19.2).
 gw.localhost {

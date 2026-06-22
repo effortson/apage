@@ -153,5 +153,26 @@ func (s *Server) Router() http.Handler {
 		})
 	})
 
+	// Platform admin plane (spec §8) — separate session + IP allowlist; mount on
+	// the admin host. Password + mandatory TOTP MFA.
+	r.Route("/admin/v1", func(r chi.Router) {
+		r.Use(s.adminIPGate)
+		r.Post("/auth/login", s.handleAdminLogin)
+		r.Post("/auth/mfa", s.handleAdminMFA)
+		r.Group(func(r chi.Router) {
+			r.Use(s.requireAdmin)
+			r.Post("/auth/logout", s.handleAdminLogout)
+			r.Get("/overview", s.handleAdminOverview)
+			r.Get("/tenants", s.handleAdminListTenants)
+			r.Get("/tenants/{id}", s.handleAdminTenantDetail)
+			r.Post("/tenants/{id}/trust", s.handleAdminSetTrust)
+			r.Post("/tenants/{id}/suspend", s.handleAdminSuspend)
+			r.Post("/tenants/{id}/restore", s.handleAdminRestore)
+			r.Get("/abuse-reports", s.handleAdminListAbuse)
+			r.Post("/abuse-reports/{id}/action", s.handleAdminActionAbuse)
+			r.Get("/audit-logs", s.handleAdminListAudit)
+		})
+	})
+
 	return r
 }

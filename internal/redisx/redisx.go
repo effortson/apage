@@ -204,6 +204,30 @@ func (c *Client) InvalidateLink(ctx context.Context, linkID string) error {
 	return c.rdb.Del(ctx, "link:"+linkID).Err()
 }
 
+// --- Generic ephemeral keys (admin pending/session, spec §8) ---
+
+// SetKV stores a short-lived key (e.g. an admin session/pending-MFA token).
+func (c *Client) SetKV(ctx context.Context, key, val string, ttl time.Duration) error {
+	return c.rdb.Set(ctx, key, val, ttl).Err()
+}
+
+// GetKV returns a key's value; ok is false when absent or expired.
+func (c *Client) GetKV(ctx context.Context, key string) (string, bool, error) {
+	v, err := c.rdb.Get(ctx, key).Result()
+	if errors.Is(err, redis.Nil) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return v, true, nil
+}
+
+// DelKV deletes a key (e.g. admin logout, consume pending token).
+func (c *Client) DelKV(ctx context.Context, key string) error {
+	return c.rdb.Del(ctx, key).Err()
+}
+
 // --- Usage metering buffer (spec §19.7: buffer in Redis, flush async) ---
 
 // UsageDelta is one buffered usage increment awaiting flush to the DB.

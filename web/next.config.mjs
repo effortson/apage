@@ -6,7 +6,10 @@ const nextConfig = {
   // Proxy API calls to apage-api so the browser stays same-origin and the
   // session cookie flows (spec §12 frontend tech alignment).
   async rewrites() {
-    return [{ source: "/api/v1/:path*", destination: `${apiBase}/api/v1/:path*` }];
+    return [
+      { source: "/api/v1/:path*", destination: `${apiBase}/api/v1/:path*` },
+      { source: "/admin/v1/:path*", destination: `${apiBase}/admin/v1/:path*` },
+    ];
   },
 };
 

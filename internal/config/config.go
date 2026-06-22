@@ -61,6 +61,11 @@ type Config struct {
 	// AuditRetentionDays: audit logs older than this are purged (spec §11/§15.6).
 	AuditRetentionDays int
 
+	// Admin console (spec §8). Empty allowlist => no IP restriction (dev only).
+	AdminIPAllowlist       []string // comma-separated CIDRs/IPs
+	AdminBootstrapEmail    string   // seeds the first platform admin if the table is empty
+	AdminBootstrapPassword string
+
 	// OAuth providers (spec §25). Empty client id/secret => provider disabled.
 	OAuthRedirectBase   string // base URL for the callback redirect_uri (default https://<ConsoleDomain>)
 	OAuthGitHubClientID string
@@ -115,6 +120,9 @@ func Load() (*Config, error) {
 		MailFrom:                env("MAIL_FROM", "no-reply@apage.local"),
 		SafeBrowsingAPIKey:      env("SAFE_BROWSING_API_KEY", ""),
 		AuditRetentionDays:      envInt("AUDIT_RETENTION_DAYS", 90),
+		AdminIPAllowlist:        envList("ADMIN_IP_ALLOWLIST"),
+		AdminBootstrapEmail:     env("ADMIN_BOOTSTRAP_EMAIL", ""),
+		AdminBootstrapPassword:  env("ADMIN_BOOTSTRAP_PASSWORD", ""),
 		OAuthRedirectBase:       env("OAUTH_REDIRECT_BASE", ""),
 		OAuthGitHubClientID:     env("OAUTH_GITHUB_CLIENT_ID", ""),
 		OAuthGitHubSecret:       env("OAUTH_GITHUB_CLIENT_SECRET", ""),
@@ -164,6 +172,21 @@ func envInt64(key string, def int64) int64 {
 		}
 	}
 	return def
+}
+
+// envList parses a comma-separated env var into a trimmed, non-empty slice.
+func envList(key string) []string {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return nil
+	}
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func envBool(key string, def bool) bool {

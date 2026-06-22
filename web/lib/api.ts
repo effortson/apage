@@ -83,3 +83,24 @@ export async function api<T = unknown>(path: string, opts: Opts = {}): Promise<T
 export function idemKey(prefix = "ui"): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
+
+// adminApi calls the platform-admin plane (/admin/v1). The admin session cookie
+// is SameSite=Strict, so no CSRF token is required.
+export async function adminApi<T = unknown>(
+  path: string,
+  opts: { method?: string; body?: unknown } = {},
+): Promise<T> {
+  const res = await fetch(`/admin/v1${path}`, {
+    method: opts.method || "GET",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    const err: ApiError = data?.error || { code: "UNKNOWN", message: `HTTP ${res.status}` };
+    throw new ApiException(res.status, err);
+  }
+  return data as T;
+}
