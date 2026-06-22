@@ -193,7 +193,7 @@
 - agent 发送但 gateway 从不校验;无能力交集协商。
 
 ### APAGE-040 · 测试覆盖薄 + audit_logs 未分区
-- 17 个包仅 3 个有测试(agent/api/hash);gateway/store/redisx/worker/tunnel/objstore 无测试。`audit_logs` 单表未按 tenant/created 分区(§19.7)。
+- **状态**:🟡 部分修。测试覆盖从 3 → 6 个包(本轮新增 gateway version/caps、worker scan/range/delete、tunnel 二进制帧、api moderation/render/domains 等)。**仍待**:store/redisx/objstore 需集成测试(依赖 DB/Redis/S3);`audit_logs` 分区需对已应用 migration 动刀(建表→迁数据→切换),属 DBA 操作,单表 + 索引对当前规模可接受,留作扩容项。
 
 ---
 
