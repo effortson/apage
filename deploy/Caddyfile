@@ -1,0 +1,47 @@
+# APAGE edge proxy (spec §22.2): TLS + wildcard routing + WebSocket.
+# Local dev uses internal TLS; production uses ACME for the base + render domains.
+
+{
+	# For local dev, disable automatic public ACME and use internal certs.
+	local_certs
+}
+
+# Console + marketing + control-plane API.
+console.localhost, localhost {
+	reverse_proxy api:8080
+}
+
+# Platform admin plane (spec §8) — separate host. Forward the real client IP so
+# the admin IP allowlist sees the true source. In production restrict this host
+# at the network edge and serve the admin SPA here.
+admin.localhost {
+	reverse_proxy api:8080 {
+		header_up X-Forwarded-For {remote_host}
+	}
+}
+
+# Agent tunnel endpoint (WebSocket upgrade) — routed to the gateway.
+# In production this is a dedicated agent LB (spec §19.2).
+gw.localhost {
+	reverse_proxy gateway:8090
+}
+
+# Wildcard preview subdomains: *.preview.localhost -> API runtime endpoints.
+# The API resolves the instance from the subdomain and serves /p/ and /f/.
+*.preview.localhost {
+	# Pass the real client IP so ip_allowlist + audit see the true source
+	# (spec §14: only trust XFF injected by our own edge).
+	reverse_proxy api:8080 {
+		header_up X-Forwarded-For {remote_host}
+	}
+}
+
+# Isolated render domain for untrusted HTML/SVG (spec §13/§15.5). Active content
+# is served here, on a separate origin from the control plane, inside a sandboxed
+# iframe / as an image. Forward the real client IP so the ip_allowlist re-check on
+# the /raw subresource sees the true source (spec §14).
+render.preview.localhost {
+	reverse_proxy api:8080 {
+		header_up X-Forwarded-For {remote_host}
+	}
+}

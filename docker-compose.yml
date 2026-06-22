@@ -1,0 +1,109 @@
+# APAGE MVP single-box stack (spec §22.2/§22.4 Phase 0/1).
+# api + gateway + worker + postgres + redis + minio + caddy.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: apage
+      POSTGRES_PASSWORD: apage
+      POSTGRES_DB: apage
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apage"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Host port remapped to avoid conflicts with other local Postgres instances.
+    ports: ["5433:5432"]
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports: ["6379:6379"]
+
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Host ports remapped to avoid conflicts with other local stacks.
+    ports: ["9100:9000", "9101:9001"]
+
+  api:
+    build:
+      context: .
+      args: { SERVICE: api }
+    environment: &svcenv
+      DATABASE_URL: postgres://apage:apage@postgres:5432/apage?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT: http://minio:9000
+      # Browser-reachable endpoint for presigned upload/preview URLs (minio is
+      # host-exposed at 9100). Enables signed-URL cloud previews (spec §19.3).
+      S3_PUBLIC_ENDPOINT: http://localhost:9100
+      S3_BUCKET: apage
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      APP_BASE_DOMAIN: preview.localhost
+      APP_CONSOLE_DOMAIN: console.localhost
+      APP_RENDER_DOMAIN: render.preview.localhost
+      GATEWAY_INTERNAL_URL: http://gateway:8090
+      JWT_SIGNING_SECRET: dev-jwt-secret-change-me
+      SESSION_SECRET: dev-session-secret-change-me
+      API_ADDR: ":8080"
+      GATEWAY_ADDR: ":8090"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    ports: ["8080:8080"]
+
+  gateway:
+    build:
+      context: .
+      args: { SERVICE: gateway }
+    environment: *svcenv
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports: ["8090:8090"]
+
+  worker:
+    build:
+      context: .
+      args: { SERVICE: worker }
+    environment: *svcenv
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+
+  caddy:
+    image: caddy:2-alpine
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    depends_on: [api, gateway]
+    ports: ["80:80", "443:443"]
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+  caddydata:

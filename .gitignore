@@ -1,0 +1,9 @@
+.DS_Store
+.env
+/bin/
+*.log
+node_modules/
+web/.next/
+web/out/
+web/node_modules/
+dist/
