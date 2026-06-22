@@ -3,47 +3,69 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, ApiException } from "@/lib/api";
 import { AuthShell } from "@/components/authshell";
-import { Button, Input } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function Reset() {
   const [token, setToken] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
 
   useEffect(() => {
     setToken(new URLSearchParams(window.location.search).get("token") || "");
   }, []);
 
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setErr("");
+    setLoading(true);
+    try {
+      await api("/auth/reset-password", { method: "POST", tenant: false, body: { token, password } });
+      setDone(true);
+    } catch (e) {
+      setErr(e instanceof ApiException ? e.body.message : "Reset failed — the link may be expired.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <AuthShell title="Choose a new password">
+    <AuthShell
+      title="Choose a new password"
+      footer={
+        <Link href="/login" className="text-foreground underline-offset-4 hover:underline">
+          Back to sign in
+        </Link>
+      }
+    >
       {done ? (
-        <>
-          <p>Your password has been reset.</p>
-          <Button onClick={() => (location.href = "/login")} style={{ width: "100%", marginTop: 8 }}>Sign in</Button>
-        </>
+        <div className="space-y-4">
+          <p className="text-center text-sm text-muted-foreground">Your password has been reset.</p>
+          <Button onClick={() => (location.href = "/login")} className="w-full">
+            Sign in
+          </Button>
+        </div>
       ) : (
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setErr("");
-            try {
-              await api("/auth/reset-password", { method: "POST", tenant: false, body: { token, password } });
-              setDone(true);
-            } catch (e) {
-              setErr(e instanceof ApiException ? e.body.message : "Reset failed — the link may be expired.");
-            }
-          }}
-        >
-          <Input label="New password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 8 }}>At least 10 characters with letters and digits.</p>
-          {err && <div style={{ color: "var(--color-danger)", fontSize: 13, marginBottom: 12 }}>{err}</div>}
-          <Button type="submit" style={{ width: "100%" }}>Reset password</Button>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="password">New password</Label>
+            <Input id="password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <p className="text-xs text-muted-foreground">At least 10 characters with letters and digits.</p>
+          </div>
+          {err && (
+            <Alert variant="destructive">
+              <AlertDescription>{err}</AlertDescription>
+            </Alert>
+          )}
+          <Button type="submit" disabled={loading} className="w-full">
+            {loading ? "Resetting…" : "Reset password"}
+          </Button>
         </form>
       )}
-      <p style={{ fontSize: 13, marginTop: 16, color: "var(--color-text-muted)" }}>
-        <Link href="/login">Back to sign in</Link>
-      </p>
     </AuthShell>
   );
 }

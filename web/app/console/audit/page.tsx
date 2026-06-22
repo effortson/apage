@@ -1,8 +1,21 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, List } from "@/lib/api";
-import { Table, Td, Skeleton, Input, Button, Badge } from "@/components/ui";
 import { absoluteTime, relativeTime } from "@/lib/format";
+import { PageHeader, EmptyState } from "@/components/composites";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export default function Audit() {
   const [items, setItems] = useState<any[]>([]);
@@ -14,32 +27,84 @@ export default function Audit() {
     const q = new URLSearchParams({ limit: "50" });
     if (event) q.set("event", event);
     if (!reset && cursor) q.set("cursor", cursor);
-    return api<List<any>>(`/audit-logs?${q}`).then((r) => { setItems(reset ? r.items || [] : [...items, ...(r.items || [])]); setCursor(r.nextCursor); setLoading(false); });
+    return api<List<any>>(`/audit-logs?${q}`).then((r) => {
+      setItems(reset ? r.items || [] : [...items, ...(r.items || [])]);
+      setCursor(r.nextCursor);
+      setLoading(false);
+    });
   };
-  useEffect(() => { setLoading(true); load(true).catch(() => setLoading(false)); /* eslint-disable-next-line */ }, [event]);
+  useEffect(() => {
+    setLoading(true);
+    load(true).catch(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event]);
 
   return (
     <div>
-      <h1 style={{ marginBottom: 16 }}>Audit Logs</h1>
-      <div style={{ maxWidth: 320 }}>
-        <Input label="Filter by event" value={event} onChange={(e) => setEvent(e.target.value)} placeholder="preview_link.accessed" />
+      <PageHeader
+        title="Audit Logs"
+        description="Secrets are always redacted. Visible to admins and owners."
+      />
+
+      <div className="mb-4 max-w-xs space-y-1.5">
+        <Label htmlFor="event">Filter by event</Label>
+        <Input
+          id="event"
+          value={event}
+          onChange={(e) => setEvent(e.target.value)}
+          placeholder="preview_link.accessed"
+        />
       </div>
-      <p style={{ fontSize: 13, color: "var(--color-text-muted)", marginBottom: 12 }}>Secrets are always redacted. Visible to admins and owners.</p>
-      {loading ? <Skeleton rows={6} /> : (
+
+      {loading ? (
+        <Skeleton className="h-64 w-full" />
+      ) : items.length === 0 ? (
+        <EmptyState title="No audit events" hint="Activity in your tenant will appear here." />
+      ) : (
         <>
-          <Table head={["Time", "Event", "Actor", "Resource", "IP", "Reason"]}>
-            {items.map((a) => (
-              <tr key={a.eventId}>
-                <Td title={absoluteTime(a.createdAt)}>{relativeTime(a.createdAt)}</Td>
-                <Td><Badge tone="muted">{a.event}</Badge></Td>
-                <Td>{a.actorType}{a.actorId ? ` (${a.actorId.slice(0, 10)}…)` : ""}</Td>
-                <Td mono>{a.resourceType}{a.resourceId ? `/${a.resourceId.slice(0, 12)}…` : ""}</Td>
-                <Td mono>{a.ip || "—"}</Td>
-                <Td>{a.reason || "—"}</Td>
-              </tr>
-            ))}
-          </Table>
-          {cursor && <div style={{ marginTop: 12 }}><Button variant="secondary" onClick={() => load(false)}>Load more</Button></div>}
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Event</TableHead>
+                  <TableHead>Actor</TableHead>
+                  <TableHead>Resource</TableHead>
+                  <TableHead>IP</TableHead>
+                  <TableHead>Reason</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((a) => (
+                  <TableRow key={a.eventId}>
+                    <TableCell className="text-sm text-muted-foreground" title={absoluteTime(a.createdAt)}>
+                      {relativeTime(a.createdAt)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{a.event}</Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {a.actorType}
+                      {a.actorId ? ` (${a.actorId.slice(0, 10)}…)` : ""}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {a.resourceType}
+                      {a.resourceId ? `/${a.resourceId.slice(0, 12)}…` : ""}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">{a.ip || "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{a.reason || "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          {cursor && (
+            <div className="mt-4">
+              <Button variant="outline" onClick={() => load(false)}>
+                Load more
+              </Button>
+            </div>
+          )}
         </>
       )}
     </div>

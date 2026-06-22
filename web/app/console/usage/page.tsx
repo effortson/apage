@@ -1,21 +1,31 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { AlertTriangle } from "lucide-react";
 import { api, ApiException } from "@/lib/api";
-import { Card, Skeleton, Badge, Banner, Button } from "@/components/ui";
 import { formatBytes, pct, absoluteTime } from "@/lib/format";
+import { PageHeader, Stat } from "@/components/composites";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const labels: Record<string, { name: string; bytes?: boolean }> = {
   instances: { name: "Instances" },
   storageBytes: { name: "Storage", bytes: true },
-  tunnelEgress: { name: "Tunnel egress", bytes: true },
   cloudEgress: { name: "Cloud egress", bytes: true },
   customDomains: { name: "Custom domains" },
 };
 
 type Metric = { used: number; limit: number };
-type Day = { day: string; tunnelEgress: number; cloudEgress: number; storageBytes: number };
-type Billing = { plan: string; price: { monthlyCents: number; currency: string }; upgradeOptions: string[]; autoCharge: boolean };
+type Day = { day: string; cloudEgress: number; storageBytes: number };
+type Billing = {
+  plan: string;
+  price: { monthlyCents: number; currency: string };
+  upgradeOptions: string[];
+  autoCharge: boolean;
+};
 
 export default function Usage() {
   const [u, setU] = useState<any>(null);
@@ -24,71 +34,141 @@ export default function Usage() {
 
   useEffect(() => {
     api<any>("/usage").then(setU).catch(() => setU(null));
-    api<{ series: Day[] }>("/usage/timeseries?days=30").then((r) => setSeries(r.series || [])).catch(() => {});
+    api<{ series: Day[] }>("/usage/timeseries?days=30")
+      .then((r) => setSeries(r.series || []))
+      .catch(() => {});
     // /billing is owner-only; silently skip for non-owners (RBAC, UI §7.7).
-    api<Billing>("/billing").then(setBilling).catch((e) => { if (!(e instanceof ApiException && e.status === 403)) setBilling(null); });
+    api<Billing>("/billing")
+      .then(setBilling)
+      .catch((e) => {
+        if (!(e instanceof ApiException && e.status === 403)) setBilling(null);
+      });
   }, []);
 
-  if (!u) return <Skeleton rows={6} />;
+  if (!u) {
+    return (
+      <div>
+        <PageHeader title="Usage & Billing" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 w-full" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const metrics: [string, Metric][] = Object.entries(u.metrics);
   const overLimit = metrics.filter(([, m]) => pct(m.used, m.limit) >= 80);
 
   return (
     <div>
-      <h1 style={{ marginBottom: 16 }}>Usage &amp; Billing</h1>
+      <PageHeader
+        title="Usage & Billing"
+        description="Billed by cloud storage, download (egress), and retention."
+      />
 
       {overLimit.length > 0 && (
-        <Banner tone="warning">
-          Approaching limits: {overLimit.map(([k]) => labels[k]?.name || k).join(", ")}. Lite prompts an upgrade past
-          limits and never auto-bills — <Link href="/pricing">see plans</Link>.
-        </Banner>
+        <Alert className="mb-6">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Approaching limits</AlertTitle>
+          <AlertDescription>
+            {overLimit.map(([k]) => labels[k]?.name || k).join(", ")}. Lite prompts an upgrade past
+            limits and never auto-bills —{" "}
+            <Link href="/pricing" className="underline underline-offset-4">
+              see plans
+            </Link>
+            .
+          </AlertDescription>
+        </Alert>
       )}
 
-      <Card title={<span>Current plan <Badge tone="info">{u.plan}</Badge></span>}>
-        <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
-          Period {absoluteTime(u.periodStart)} → {absoluteTime(u.periodEnd)}. Tunnel billed by instances/traffic/domains;
-          Cloud by storage/download/retention. Lite prompts an upgrade past limits and never auto-bills.
-        </p>
+      <Card className="mb-6">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">Current plan</CardTitle>
+          <Badge variant="secondary" className="capitalize">
+            {u.plan}
+          </Badge>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Period {absoluteTime(u.periodStart)} → {absoluteTime(u.periodEnd)}. Lite prompts an
+            upgrade past limits and never auto-bills.
+          </p>
+        </CardContent>
       </Card>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 16, marginTop: 16 }}>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {metrics.map(([k, m]) => {
           const meta = labels[k] || { name: k };
           const p = pct(m.used, m.limit);
           const fmt = meta.bytes ? formatBytes : (n: number) => String(n);
           return (
             <Card key={k}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontWeight: 600 }}>{meta.name}</span>
-                <span style={{ fontSize: 13, color: p >= 80 ? "var(--color-danger)" : "var(--color-text-muted)" }}>{fmt(m.used)} / {fmt(m.limit)}</span>
-              </div>
-              <div style={{ height: 8, background: "var(--color-bg-muted)", borderRadius: 4, marginTop: 8, overflow: "hidden" }}>
-                <div style={{ width: `${p}%`, height: "100%", background: p >= 80 ? "var(--color-danger)" : "var(--color-primary)" }} />
-              </div>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  {meta.name}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-semibold tracking-tight">{fmt(m.used)}</span>
+                  <span
+                    className={
+                      p >= 80
+                        ? "text-xs font-medium text-destructive"
+                        : "text-xs text-muted-foreground"
+                    }
+                  >
+                    of {fmt(m.limit)}
+                  </span>
+                </div>
+                <div className="mt-3 h-2 rounded-full bg-muted">
+                  <div
+                    className={
+                      p >= 80
+                        ? "h-full rounded-full bg-destructive"
+                        : "h-full rounded-full bg-primary"
+                    }
+                    style={{ width: `${Math.min(100, p)}%` }}
+                  />
+                </div>
+              </CardContent>
             </Card>
           );
         })}
       </div>
 
-      <Card title="Egress trend (30 days)" style={{ marginTop: 16 }}>
-        <TrendChart series={series} />
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Egress trend (30 days)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <TrendChart series={series} />
+        </CardContent>
       </Card>
 
       {billing && (
-        <Card title="Billing" style={{ marginTop: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Billing</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between">
             <div>
-              <div style={{ fontWeight: 600, textTransform: "capitalize" }}>{billing.plan}</div>
-              <div style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
-                {billing.price.monthlyCents === 0 ? "Free" : `${billing.price.currency} ${(billing.price.monthlyCents / 100).toFixed(2)}/mo`}
+              <div className="font-medium capitalize">{billing.plan}</div>
+              <div className="text-sm text-muted-foreground">
+                {billing.price.monthlyCents === 0
+                  ? "Free"
+                  : `${billing.price.currency} ${(billing.price.monthlyCents / 100).toFixed(2)}/mo`}
                 {" · "}over-limit prompts an upgrade, never auto-bills.
               </div>
             </div>
             {billing.upgradeOptions.length > 0 && (
-              <Link href="/pricing"><Button>Upgrade ({billing.upgradeOptions.join(" / ")})</Button></Link>
+              <Button asChild>
+                <Link href="/pricing">Upgrade ({billing.upgradeOptions.join(" / ")})</Link>
+              </Button>
             )}
-          </div>
+          </CardContent>
         </Card>
       )}
     </div>
@@ -97,26 +177,33 @@ export default function Usage() {
 
 function TrendChart({ series }: { series: Day[] }) {
   if (!series.length) {
-    return <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>No usage recorded yet — egress appears here as links are viewed.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        No usage recorded yet — egress appears here as links are viewed.
+      </p>
+    );
   }
-  const vals = series.map((s) => (s.tunnelEgress || 0) + (s.cloudEgress || 0));
+  const vals = series.map((s) => s.cloudEgress || 0);
   const max = Math.max(1, ...vals);
-  const W = 600, H = 120, pad = 4;
-  const bw = (W - pad * 2) / series.length;
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: 140 }} role="img" aria-label="Daily egress trend">
-        {series.map((s, i) => {
-          const v = (s.tunnelEgress || 0) + (s.cloudEgress || 0);
-          const bh = (v / max) * (H - 16);
+      <div className="flex h-32 items-end gap-px" role="img" aria-label="Daily egress trend">
+        {series.map((s) => {
+          const v = s.cloudEgress || 0;
+          const h = Math.max(2, (v / max) * 100);
           return (
-            <rect key={s.day} x={pad + i * bw + 1} y={H - bh} width={Math.max(1, bw - 2)} height={bh} rx={2} fill="var(--color-primary)">
-              <title>{`${s.day}: ${formatBytes(v)}`}</title>
-            </rect>
+            <div
+              key={s.day}
+              className="flex-1 rounded-t-sm bg-primary"
+              style={{ height: `${h}%` }}
+              title={`${s.day}: ${formatBytes(v)}`}
+            />
           );
         })}
-      </svg>
-      <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>Peak day: {formatBytes(max)} (tunnel + cloud egress)</div>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Peak day: {formatBytes(max)} (cloud egress)
+      </p>
     </div>
   );
 }

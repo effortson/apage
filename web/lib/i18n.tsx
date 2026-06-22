@@ -1,5 +1,6 @@
 "use client";
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 
 export type Locale = "en" | "zh";
 
@@ -64,12 +65,14 @@ export const useT = () => useContext(LocaleCtx).t;
 export function LocaleToggle() {
   const { locale, setLocale } = useLocale();
   return (
-    <button
+    <Button
+      variant="ghost"
+      size="sm"
       onClick={() => setLocale(locale === "en" ? "zh" : "en")}
       aria-label="toggle language"
-      style={{ background: "none", border: "1px solid var(--color-border)", borderRadius: "var(--radius-sm)", padding: "4px 8px", cursor: "pointer", color: "var(--color-text-muted)", fontSize: 13 }}
+      className="text-muted-foreground"
     >
       {locale === "en" ? "中文" : "EN"}
-    </button>
+    </Button>
   );
 }

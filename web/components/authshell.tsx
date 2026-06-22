@@ -1,14 +1,38 @@
-import { Card } from "@/components/ui";
+import Link from "next/link";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-export function AuthShell({ title, children }: { title: string; children: React.ReactNode }) {
+export function AuthShell({
+  title,
+  description,
+  children,
+  footer,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
   return (
-    <main style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ width: 380 }}>
-        <div style={{ textAlign: "center", marginBottom: 24, fontWeight: 700, fontSize: 20 }}>APAGE</div>
+    <main className="flex min-h-screen items-center justify-center bg-muted/30 p-6">
+      <div className="w-full max-w-sm">
+        <Link
+          href="/"
+          className="mb-6 block text-center text-lg font-semibold tracking-tight"
+        >
+          APAGE
+        </Link>
         <Card>
-          <h2 style={{ marginBottom: 16 }}>{title}</h2>
-          {children}
+          <CardHeader>
+            <CardTitle className="text-xl">{title}</CardTitle>
+            {description && (
+              <p className="text-sm text-muted-foreground">{description}</p>
+            )}
+          </CardHeader>
+          <CardContent>{children}</CardContent>
         </Card>
+        {footer && (
+          <p className="mt-4 text-center text-sm text-muted-foreground">{footer}</p>
+        )}
       </div>
     </main>
   );
