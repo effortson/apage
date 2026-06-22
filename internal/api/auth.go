@@ -82,7 +82,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
-	if !s.limit(w, r, "login:"+httpx.ClientIP(r.Context())+":"+req.Email, 10, 15*time.Minute) {
+	if !s.limitStrict(w, r, "login:"+httpx.ClientIP(r.Context())+":"+req.Email, 10, 15*time.Minute) {
 		return
 	}
 	u, err := s.db.UserByEmail(r.Context(), req.Email)
@@ -104,7 +104,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		_ = s.db.DeleteSession(r.Context(), c.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", Domain: s.cookieDomain(), MaxAge: -1, HttpOnly: true})
 	httpx.JSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -117,7 +117,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Refresh the CSRF token so any already-active session obtains one.
-	issueCSRFToken(w, int(sessionTTL.Seconds()))
+	issueCSRFToken(w, s.cookieDomain(), int(sessionTTL.Seconds()))
 	ms, _ := s.db.MembershipsForUser(r.Context(), au.UserID)
 	tenants := make([]map[string]any, 0, len(ms))
 	for _, m := range ms {
@@ -166,7 +166,14 @@ func (s *Server) handleResendVerification(w http.ResponseWriter, r *http.Request
 		httpx.BadRequest(w, r, "invalid body")
 		return
 	}
-	if u, err := s.db.UserByEmail(r.Context(), strings.ToLower(req.Email)); err == nil && u.EmailVerifiedAt == nil {
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	// Throttle per IP and per target email to prevent verification-email bombing
+	// (security review #5).
+	if !s.limit(w, r, "resend:"+httpx.ClientIP(r.Context()), 5, time.Hour) ||
+		!s.limit(w, r, "resend:"+email, 5, time.Hour) {
+		return
+	}
+	if u, err := s.db.UserByEmail(r.Context(), email); err == nil && u.EmailVerifiedAt == nil {
 		s.sendVerification(r, u.UserID, u.Email)
 	}
 	httpx.JSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -179,7 +186,14 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 		httpx.BadRequest(w, r, "invalid body")
 		return
 	}
-	if u, err := s.db.UserByEmail(r.Context(), strings.ToLower(req.Email)); err == nil {
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	// Throttle per IP and per target email to prevent reset-email bombing and
+	// token churn (security review #5).
+	if !s.limit(w, r, "forgot:"+httpx.ClientIP(r.Context()), 5, time.Hour) ||
+		!s.limit(w, r, "forgot:"+email, 5, time.Hour) {
+		return
+	}
+	if u, err := s.db.UserByEmail(r.Context(), email); err == nil {
 		tok := id.NewSecret("aps_")
 		_ = s.db.CreateAuthToken(r.Context(), hash.SecretHash(tok), u.UserID, "", "reset_password", "", "", time.Now().Add(time.Hour))
 		_ = s.mail.Send(u.Email, "Reset your APAGE password", "Reset token: "+tok)
@@ -214,6 +228,9 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.db.SetPassword(r.Context(), row.UserID, ph)
+	// Revoke all existing sessions so a reset (e.g. account recovery) does not
+	// leave a prior attacker session live (spec §25 / security review #5).
+	_ = s.db.DeleteSessionsForUser(r.Context(), row.UserID)
 	httpx.JSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -223,10 +240,10 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, userID str
 	sid := id.New(id.PrefixSession)
 	_ = s.db.CreateSession(r.Context(), sid, userID, time.Now().Add(sessionTTL))
 	http.SetCookie(w, &http.Cookie{
-		Name: sessionCookie, Value: sid, Path: "/", HttpOnly: true,
+		Name: sessionCookie, Value: sid, Path: "/", Domain: s.cookieDomain(), HttpOnly: true,
 		Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: int(sessionTTL.Seconds()),
 	})
-	issueCSRFToken(w, int(sessionTTL.Seconds()))
+	issueCSRFToken(w, s.cookieDomain(), int(sessionTTL.Seconds()))
 }
 
 func (s *Server) sendVerification(r *http.Request, userID, email string) {
@@ -236,9 +253,27 @@ func (s *Server) sendVerification(r *http.Request, userID, email string) {
 }
 
 // limit applies a rate limit and writes a 429 if exceeded (spec §"限流响应约定").
+// Fail-open on a limiter error so a transient Redis blip does not take down
+// general traffic; sensitive credential checks use limitStrict instead.
 func (s *Server) limit(w http.ResponseWriter, r *http.Request, key string, max int, window time.Duration) bool {
+	return s.rateLimit(w, r, key, max, window, false)
+}
+
+// limitStrict is the fail-closed variant used for brute-force-sensitive
+// credential endpoints (login, MFA, password unlock): if the limiter is
+// unavailable, deny rather than allow unbounded attempts (security review #10).
+func (s *Server) limitStrict(w http.ResponseWriter, r *http.Request, key string, max int, window time.Duration) bool {
+	return s.rateLimit(w, r, key, max, window, true)
+}
+
+func (s *Server) rateLimit(w http.ResponseWriter, r *http.Request, key string, max int, window time.Duration, failClosed bool) bool {
 	res, err := s.rdb.RateLimit(r.Context(), key, max, window)
 	if err != nil {
+		s.log.Error("rate limiter error", "key", key, "failClosed", failClosed, "err", err)
+		if failClosed {
+			httpx.Err(w, r, http.StatusServiceUnavailable, httpx.CodeServiceUnavailable, "rate limiter unavailable, try again shortly", true)
+			return false
+		}
 		return true // fail open on limiter error
 	}
 	httpx.SetRateLimitHeaders(w, res.Limit, res.Remaining, res.ResetUnix)

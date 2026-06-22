@@ -61,6 +61,10 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) {
 		httpx.BadRequest(w, r, "instanceId required for tunnel mode")
 		return
 	}
+	if in != nil && in.FrozenAt != nil {
+		httpx.Forbidden(w, r, "instance is frozen")
+		return
+	}
 	instanceID := ""
 	if in != nil {
 		instanceID = in.InstanceID

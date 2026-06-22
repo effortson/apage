@@ -114,14 +114,19 @@ func (s *Server) requireSession(next http.Handler) http.Handler {
 
 // issueCSRFToken sets a fresh double-submit CSRF cookie and returns its value
 // (called on login/register/session so any active console gets a token).
-func issueCSRFToken(w http.ResponseWriter, ttlSeconds int) string {
+func issueCSRFToken(w http.ResponseWriter, domain string, ttlSeconds int) string {
 	tok := id.New("csrf_")
 	http.SetCookie(w, &http.Cookie{
-		Name: csrfCookie, Value: tok, Path: "/",
+		Name: csrfCookie, Value: tok, Path: "/", Domain: domain,
 		Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: ttlSeconds, // not HttpOnly: JS must read it
 	})
 	return tok
 }
+
+// cookieDomain returns the configured parent domain for the session/CSRF
+// cookies (e.g. ".example.com") so they reach preview subdomains, or "" for
+// host-only cookies in dev (security review #6).
+func (s *Server) cookieDomain() string { return s.cfg.CookieDomain }
 
 func safeMethod(m string) bool {
 	switch m {

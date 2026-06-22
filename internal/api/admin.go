@@ -88,7 +88,7 @@ type adminLoginReq struct {
 // handleAdminLogin verifies the password and starts the MFA challenge. On first
 // login it returns a TOTP enrollment URI to scan.
 func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
-	if !s.limit(w, r, "adminlogin:"+httpx.ClientIP(r.Context()), 10, 15*time.Minute) {
+	if !s.limitStrict(w, r, "adminlogin:"+httpx.ClientIP(r.Context()), 10, 15*time.Minute) {
 		return
 	}
 	var req adminLoginReq
@@ -138,7 +138,7 @@ type adminMFAReq struct {
 
 // handleAdminMFA verifies the TOTP code and issues the admin session.
 func (s *Server) handleAdminMFA(w http.ResponseWriter, r *http.Request) {
-	if !s.limit(w, r, "adminmfa:"+httpx.ClientIP(r.Context()), 10, 15*time.Minute) {
+	if !s.limitStrict(w, r, "adminmfa:"+httpx.ClientIP(r.Context()), 10, 15*time.Minute) {
 		return
 	}
 	c, err := r.Cookie(adminPendingCookie)

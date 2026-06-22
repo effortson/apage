@@ -47,7 +47,7 @@ func New(cfg *config.Config, db *store.Store, rdb *redisx.Client, log *slog.Logg
 // Router builds the gateway routes.
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
-	r.Use(httpx.RequestContext(false))
+	r.Use(httpx.RequestContext(0)) // agent-facing: never trust X-Forwarded-For
 	r.Use(httpx.Recover(s.log))
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { httpx.JSON(w, 200, map[string]string{"status": "ok"}) })
 	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
@@ -103,6 +103,14 @@ func (s *Server) handleAgentConnect(w http.ResponseWriter, r *http.Request) {
 	in, err := s.db.VerifyAgentToken(r.Context(), hash.SecretHash(cf.AgentToken))
 	if err != nil {
 		_ = conn.WriteJSON(tunnel.Frame{Type: tunnel.TypeReject, Error: &tunnel.Error{Code: "ACCESS_DENIED", Message: "invalid agent token"}})
+		_ = conn.Close()
+		return
+	}
+	// A frozen instance must not be able to re-establish its tunnel (security
+	// review #1): freeze severs the live session, and this blocks the auto
+	// reconnect from bringing it back.
+	if in.FrozenAt != nil {
+		_ = conn.WriteJSON(tunnel.Frame{Type: tunnel.TypeReject, Error: &tunnel.Error{Code: "ACCESS_DENIED", Message: "instance is frozen"}})
 		_ = conn.Close()
 		return
 	}

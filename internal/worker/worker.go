@@ -324,8 +324,16 @@ type verdict struct {
 }
 
 // reject moves a file to the rejected state with an audit reason (spec §10/§15).
+// A rejected upload releases the storage it reserved and its object is deleted,
+// so malicious/garbage uploads neither consume quota nor linger in the bucket
+// (security review #9). 'rejected' is terminal, so the expiry sweep skips it to
+// avoid double-decrementing usage.
 func (w *Worker) reject(ctx context.Context, f *store.File, reason string) {
 	_ = w.db.SetFileStatus(ctx, f.FileID, "rejected", "failed", reason)
+	if f.StorageKey != "" {
+		_ = w.db.AddStorageUsed(ctx, f.TenantID, -f.Size)
+		_ = w.rdb.Enqueue(ctx, "delete", f.StorageKey)
+	}
 	_ = w.db.WriteAudit(ctx, audit.Entry{TenantID: f.TenantID, InstanceID: f.InstanceID,
 		Event: audit.FileRejected, ActorType: audit.ActorSystem, ResourceType: "file", ResourceID: f.FileID, Reason: reason})
 }

@@ -194,8 +194,9 @@ func (s *Server) handleFileDirect(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUnlock(w http.ResponseWriter, r *http.Request) {
 	linkID := chi.URLParam(r, "linkId")
 	secret := chi.URLParam(r, "secret")
-	// Rate-limit password attempts (spec §14).
-	if !s.limit(w, r, "unlock:"+linkID+":"+httpx.ClientIP(r.Context()), 5, 15*time.Minute) {
+	// Rate-limit password attempts, failing closed so a limiter outage can't open
+	// unbounded password guessing (spec §14 / security review #10).
+	if !s.limitStrict(w, r, "unlock:"+linkID+":"+httpx.ClientIP(r.Context()), 5, 15*time.Minute) {
 		return
 	}
 	link, ok := s.admitLink(w, r, linkID, secret)

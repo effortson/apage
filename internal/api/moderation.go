@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/apage/apage/internal/audit"
@@ -86,10 +87,28 @@ func (s *Server) handleFreezeInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.rdb.UnregisterAgent(r.Context(), instanceID) // sever the live tunnel
+	// Teeth: freeze the instance's links so the runtime returns 410 immediately,
+	// even if the agent's in-memory gateway session lingers or reconnects
+	// (security review #1). The gateway also rejects a frozen instance's
+	// reconnect, so the tunnel cannot come back up.
+	_, _ = s.db.FreezeInstanceLinks(r.Context(), au.TenantID, instanceID, instanceFrozenReason)
+	s.invalidateInstanceLinks(r.Context(), instanceID)
 	s.audit(r.Context(), audit.Entry{TenantID: au.TenantID, InstanceID: instanceID,
 		Event: audit.InstanceFrozen, ActorType: audit.ActorUser, ActorID: au.UserID,
 		ResourceType: "instance", ResourceID: instanceID})
 	httpx.JSON(w, http.StatusOK, map[string]any{"instanceId": instanceID, "frozen": true})
+}
+
+// instanceFrozenReason tags links frozen as a side effect of an instance freeze
+// so unfreezing the instance lifts only those (not independent abuse freezes).
+const instanceFrozenReason = "instance_frozen"
+
+func (s *Server) invalidateInstanceLinks(ctx context.Context, instanceID string) {
+	if ids, err := s.db.InstanceLinkIDs(ctx, instanceID); err == nil {
+		for _, lid := range ids {
+			_ = s.rdb.InvalidateLink(ctx, lid)
+		}
+	}
 }
 
 // handleUnfreezeInstance lifts an instance freeze (spec §15.5).
@@ -108,5 +127,8 @@ func (s *Server) handleUnfreezeInstance(w http.ResponseWriter, r *http.Request) 
 		httpx.NotFound(w, r)
 		return
 	}
+	// Lift only the instance-induced link freeze; independent abuse freezes stay.
+	_, _ = s.db.UnfreezeInstanceLinks(r.Context(), au.TenantID, instanceID, instanceFrozenReason)
+	s.invalidateInstanceLinks(r.Context(), instanceID)
 	httpx.JSON(w, http.StatusOK, map[string]any{"instanceId": instanceID, "frozen": false})
 }

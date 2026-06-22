@@ -11,10 +11,24 @@ import (
 
 // Config holds the resolved runtime configuration shared across services.
 type Config struct {
+	// Environment is "production" or "development" (APP_ENV). In production,
+	// Validate() refuses to boot with insecure default secrets.
+	Environment string
+
 	// Domains (spec §5, §33)
 	BaseDomain    string // APP_BASE_DOMAIN, e.g. preview.example.com
 	ConsoleDomain string // APP_CONSOLE_DOMAIN
 	RenderDomain  string // APP_RENDER_DOMAIN
+	// CookieDomain, when set (e.g. ".example.com"), scopes the session/CSRF
+	// cookies to the parent domain so account-gated previews on preview
+	// subdomains can read the console session (spec §14/§25). Empty => host-only.
+	CookieDomain string
+
+	// TrustedProxyCount is the number of trusted reverse proxies in front of the
+	// API. The real client IP is taken that many hops from the right of
+	// X-Forwarded-For, so a client-spoofed leftmost value cannot be trusted
+	// (spec §14). 0 => do not trust X-Forwarded-For at all (use RemoteAddr).
+	TrustedProxyCount int
 
 	// Datastores
 	DatabaseURL string // DATABASE_URL
@@ -81,6 +95,10 @@ type Config struct {
 	// Internal URL the API uses to reach the gateway for tunnel streaming
 	// (fallback when the registry has no per-instance gateway URL).
 	GatewayInternalURL string
+	// GatewayInternalSecret authenticates the API -> gateway internal stream
+	// endpoint so it cannot be driven directly even if the agent host exposes it
+	// (spec §19.4). Shared by the API and gateway; required in production.
+	GatewayInternalSecret string
 	// GatewayAdvertiseURL is the URL this gateway publishes to the registry so the
 	// API can route previews to it (multi-gateway). Defaults to GatewayInternalURL.
 	GatewayAdvertiseURL string
@@ -94,9 +112,12 @@ type Config struct {
 // Load reads configuration from the environment, applying defaults where safe.
 func Load() (*Config, error) {
 	c := &Config{
+		Environment:             strings.ToLower(env("APP_ENV", "development")),
 		BaseDomain:              env("APP_BASE_DOMAIN", "preview.localhost"),
 		ConsoleDomain:           env("APP_CONSOLE_DOMAIN", "console.localhost"),
 		RenderDomain:            env("APP_RENDER_DOMAIN", "render.preview.localhost"),
+		CookieDomain:            env("COOKIE_DOMAIN", ""),
+		TrustedProxyCount:       envInt("TRUSTED_PROXY_COUNT", 1),
 		DatabaseURL:             env("DATABASE_URL", "postgres://apage:apage@localhost:5432/apage?sslmode=disable"),
 		RedisURL:                env("REDIS_URL", "redis://localhost:6379/0"),
 		S3Endpoint:              env("S3_ENDPOINT", "http://localhost:9000"),
@@ -132,6 +153,7 @@ func Load() (*Config, error) {
 		GatewayAddr:             env("GATEWAY_ADDR", ":8090"),
 		MetricsAddr:             env("METRICS_ADDR", ":9090"),
 		GatewayInternalURL:      env("GATEWAY_INTERNAL_URL", "http://localhost:8090"),
+		GatewayInternalSecret:   env("GATEWAY_INTERNAL_SECRET", ""),
 		GatewayAdvertiseURL:     env("GATEWAY_ADVERTISE_URL", ""),
 		MaxConcurrentStreams:    envInt("MAX_CONCURRENT_STREAMS", 16),
 		MaxChunkBytes:           envInt("MAX_CHUNK_BYTES", 262144),
@@ -146,7 +168,58 @@ func Load() (*Config, error) {
 	if c.OAuthRedirectBase == "" {
 		c.OAuthRedirectBase = "https://" + c.ConsoleDomain
 	}
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
 	return c, nil
+}
+
+// IsProduction reports whether the service is running in a production-like
+// environment, where insecure default secrets must be rejected.
+func (c *Config) IsProduction() bool {
+	switch c.Environment {
+	case "", "dev", "development", "test", "local":
+		return false
+	}
+	return true
+}
+
+// insecureDefaults are the dev placeholder secrets that must never reach prod.
+// Empty also counts: these values are always required in production.
+var insecureDefaults = map[string]bool{
+	"dev-jwt-secret-change-me":      true,
+	"dev-session-secret-change-me":  true,
+	"dev-internal-secret-change-me": true,
+	"":                              true,
+}
+
+// Validate refuses to boot in production with default/empty secrets so a
+// misconfigured deploy cannot ship forgeable session/grant tokens or an
+// unauthenticated gateway stream endpoint (security review #4/#3).
+func (c *Config) Validate() error {
+	if !c.IsProduction() {
+		return nil
+	}
+	var bad []string
+	if insecureDefaults[c.SessionSecret] {
+		bad = append(bad, "SESSION_SECRET")
+	}
+	if insecureDefaults[c.JWTSigningSecret] {
+		bad = append(bad, "JWT_SIGNING_SECRET")
+	}
+	if insecureDefaults[c.GatewayInternalSecret] {
+		bad = append(bad, "GATEWAY_INTERNAL_SECRET")
+	}
+	// S3 is optional (tunnel-only deploys need no cloud storage), so only the
+	// known-dangerous "minioadmin" default is rejected — empty is allowed.
+	if c.S3AccessKey == "minioadmin" || c.S3SecretKey == "minioadmin" {
+		bad = append(bad, "S3_ACCESS_KEY/S3_SECRET_KEY")
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("APP_ENV=%s but insecure/default values for: %s "+
+			"(set strong secrets before running in production)", c.Environment, strings.Join(bad, ", "))
+	}
+	return nil
 }
 
 func env(key, def string) string {
