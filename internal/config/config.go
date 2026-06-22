@@ -59,8 +59,12 @@ type Config struct {
 	GatewayAddr string // :8090
 	MetricsAddr string // :9090
 
-	// Internal URL the API uses to reach the gateway for tunnel streaming.
+	// Internal URL the API uses to reach the gateway for tunnel streaming
+	// (fallback when the registry has no per-instance gateway URL).
 	GatewayInternalURL string
+	// GatewayAdvertiseURL is the URL this gateway publishes to the registry so the
+	// API can route previews to it (multi-gateway). Defaults to GatewayInternalURL.
+	GatewayAdvertiseURL string
 
 	// Gateway session defaults (spec §7)
 	MaxConcurrentStreams int
@@ -99,12 +103,16 @@ func Load() (*Config, error) {
 		GatewayAddr:             env("GATEWAY_ADDR", ":8090"),
 		MetricsAddr:             env("METRICS_ADDR", ":9090"),
 		GatewayInternalURL:      env("GATEWAY_INTERNAL_URL", "http://localhost:8090"),
+		GatewayAdvertiseURL:     env("GATEWAY_ADVERTISE_URL", ""),
 		MaxConcurrentStreams:    envInt("MAX_CONCURRENT_STREAMS", 16),
 		MaxChunkBytes:           envInt("MAX_CHUNK_BYTES", 262144),
 		IdleTimeoutSeconds:      envInt("IDLE_TIMEOUT_SECONDS", 60),
 	}
 	if c.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+	if c.GatewayAdvertiseURL == "" {
+		c.GatewayAdvertiseURL = c.GatewayInternalURL
 	}
 	return c, nil
 }

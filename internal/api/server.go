@@ -33,9 +33,10 @@ type Mailer interface {
 
 // GatewayClient streams a tunnel file via the gateway's internal endpoint.
 type GatewayClient interface {
-	// StreamFile asks the gateway serving instanceID to stream fileRef to w,
-	// honoring the Range header. Returns the upstream status.
-	StreamFile(w http.ResponseWriter, r *http.Request, instanceID, fileRef string) error
+	// StreamFile asks the gateway at gatewayURL (resolved from the registry) to
+	// stream fileRef to w, honoring the Range header. An empty gatewayURL uses the
+	// client's configured fallback. Returns the upstream status.
+	StreamFile(w http.ResponseWriter, r *http.Request, gatewayURL, instanceID, fileRef string) error
 }
 
 // ObjectStore abstracts cloud object storage (spec §11).

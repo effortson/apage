@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/apage/apage/internal/tunnel"
@@ -27,9 +28,17 @@ type TunnelClient struct {
 	version    string
 	log        *slog.Logger
 
-	conn    *websocket.Conn
-	writeMu sync.Mutex
-	cancels sync.Map // requestID -> context.CancelFunc
+	conn        *websocket.Conn
+	writeMu     sync.Mutex
+	cancels     sync.Map // requestID -> context.CancelFunc
+	flows       sync.Map // requestID -> *streamFlow (credit-based flow control)
+	flowControl bool     // gateway granted credit-based flow control this session
+}
+
+// streamFlow tracks per-stream send credits for backpressure (spec §7).
+type streamFlow struct {
+	credits int64 // atomic
+	wake    chan struct{}
 }
 
 // NewTunnelClient builds a tunnel client.
@@ -84,7 +93,8 @@ func (t *TunnelClient) connectOnce(ctx context.Context) error {
 	if accept.Type != tunnel.TypeSessionAccept {
 		return fmt.Errorf("unexpected handshake reply: %s", accept.Type)
 	}
-	t.log.Info("tunnel connected", "session", accept.SessionID, "gateway", t.cfg.GatewayURL)
+	t.flowControl = accept.FlowControl // only credit-gate sends if the gateway grants flow control
+	t.log.Info("tunnel connected", "session", accept.SessionID, "gateway", t.cfg.GatewayURL, "flowControl", t.flowControl)
 
 	for {
 		var f tunnel.Frame
@@ -110,6 +120,15 @@ func (t *TunnelClient) connectOnce(ctx context.Context) error {
 		case tunnel.TypeCancel:
 			if c, ok := t.cancels.Load(f.RequestID); ok {
 				c.(context.CancelFunc)()
+			}
+		case tunnel.TypeFlow:
+			if v, ok := t.flows.Load(f.RequestID); ok {
+				sf := v.(*streamFlow)
+				atomic.AddInt64(&sf.credits, int64(f.Credits))
+				select {
+				case sf.wake <- struct{}{}:
+				default:
+				}
 			}
 		}
 	}
@@ -185,6 +204,16 @@ func (t *TunnelClient) handleStream(ctx context.Context, f tunnel.Frame) {
 		return
 	}
 
+	// Credit-based flow control: only send a chunk while we hold a credit, so the
+	// gateway (and the slow visitor behind it) throttle us instead of us filling
+	// buffers (spec §7). Disabled if the gateway didn't grant flow control.
+	var sf *streamFlow
+	if t.flowControl {
+		sf = &streamFlow{credits: int64(tunnel.FlowWindow), wake: make(chan struct{}, 1)}
+		t.flows.Store(f.RequestID, sf)
+		defer t.flows.Delete(f.RequestID)
+	}
+
 	buf := make([]byte, 64*1024)
 	var sent int64
 	for sent < length {
@@ -197,8 +226,14 @@ func (t *TunnelClient) handleStream(ctx context.Context, f tunnel.Frame) {
 		}
 		n, rerr := file.Read(buf[:toRead])
 		if n > 0 {
+			if !t.awaitCredit(ctx, sf) {
+				return // cancelled while waiting for a credit
+			}
 			if err := t.writeBinary(tunnel.EncodeChunk(f.RequestID, buf[:n])); err != nil {
 				return
+			}
+			if sf != nil {
+				atomic.AddInt64(&sf.credits, -1)
 			}
 			sent += int64(n)
 		}
@@ -207,6 +242,22 @@ func (t *TunnelClient) handleStream(ctx context.Context, f tunnel.Frame) {
 		}
 	}
 	_ = t.write(tunnel.Frame{Type: tunnel.TypeStreamEnd, RequestID: f.RequestID, BytesSent: sent})
+}
+
+// awaitCredit blocks until the stream holds a send credit, returning false if the
+// stream is cancelled first. A nil sf (flow control disabled) returns immediately.
+func (t *TunnelClient) awaitCredit(ctx context.Context, sf *streamFlow) bool {
+	if sf == nil {
+		return true
+	}
+	for atomic.LoadInt64(&sf.credits) <= 0 {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-sf.wake:
+		}
+	}
+	return true
 }
 
 // parseByteRange parses a single HTTP byte-range header against the file size.

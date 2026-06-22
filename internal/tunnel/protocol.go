@@ -11,6 +11,13 @@ import (
 // Protocol version (spec §7 semantic versioning; breaking changes bump major).
 const ProtocolVersion = "1"
 
+// FlowWindow is the number of in-flight content chunks the gateway buffers per
+// stream. The agent starts with this many credits and may only send a chunk
+// while it holds a credit; the gateway grants one credit per chunk it relays to
+// the visitor. This bounds gateway memory and propagates real backpressure to
+// the agent instead of letting it fill buffers (spec §7).
+const FlowWindow = 16
+
 // Control frame types.
 const (
 	TypeConnect        = "connect"          // agent -> gateway (handshake)
@@ -24,6 +31,7 @@ const (
 	TypeStreamEnd      = "file.stream.end"      // agent -> gateway
 	TypeMetadataResult = "file.metadata.result" // agent -> gateway
 	TypeCancel         = "cancel"               // gateway -> agent
+	TypeFlow           = "flow"                 // gateway -> agent (grant send credits)
 	TypeError          = "error"                // agent -> gateway (per requestId)
 )
 
@@ -45,10 +53,14 @@ type Frame struct {
 	MaxConcurrentStreams int    `json:"maxConcurrentStreams,omitempty"`
 	MaxChunkBytes        int    `json:"maxChunkBytes,omitempty"`
 	IdleTimeoutSeconds   int    `json:"idleTimeoutSeconds,omitempty"`
+	FlowControl          bool   `json:"flowControl,omitempty"` // gateway supports credit-based flow control
 
 	// file.metadata / file.stream
 	FileRef string `json:"fileRef,omitempty"`
 	Range   string `json:"range,omitempty"`
+
+	// flow (credit grant)
+	Credits int `json:"credits,omitempty"`
 
 	// file.stream.start / file.metadata.result
 	OK      bool              `json:"ok,omitempty"`

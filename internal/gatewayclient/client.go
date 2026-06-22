@@ -24,14 +24,19 @@ func New(baseURL string) *Client {
 	}
 }
 
-// StreamFile asks the gateway to stream a tunnel file to w, forwarding Range and
-// relaying status/headers/body. Implements api.GatewayClient.
-func (c *Client) StreamFile(w http.ResponseWriter, r *http.Request, instanceID, fileRef string) error {
+// StreamFile asks the gateway at gatewayURL (or the configured fallback) to
+// stream a tunnel file to w, forwarding Range and relaying status/headers/body.
+// Implements api.GatewayClient.
+func (c *Client) StreamFile(w http.ResponseWriter, r *http.Request, gatewayURL, instanceID, fileRef string) error {
+	base := gatewayURL
+	if base == "" {
+		base = c.baseURL
+	}
 	q := url.Values{}
 	q.Set("instance", instanceID)
 	q.Set("fileRef", fileRef)
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet,
-		c.baseURL+"/internal/v1/stream?"+q.Encode(), nil)
+		base+"/internal/v1/stream?"+q.Encode(), nil)
 	if err != nil {
 		return err
 	}

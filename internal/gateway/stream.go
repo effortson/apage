@@ -87,6 +87,9 @@ func (s *Server) handleInternalStream(w http.ResponseWriter, r *http.Request) {
 			if flusher != nil {
 				flusher.Flush()
 			}
+			// Grant the agent one credit now that this chunk has drained, so it may
+			// send one more (credit-based backpressure, spec §7).
+			_ = sess.writeFrame(tunnel.Frame{Type: tunnel.TypeFlow, RequestID: reqID, Credits: 1})
 		case <-st.endCh:
 			// Drain any remaining buffered chunks.
 			for {

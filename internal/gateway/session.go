@@ -60,7 +60,7 @@ func (s *Session) tryAddStream(reqID string, limit int) (*stream, bool) {
 	}
 	st := &stream{
 		startCh: make(chan tunnel.Frame, 1),
-		dataCh:  make(chan []byte, 8), // bounded buffer applies backpressure (spec §7)
+		dataCh:  make(chan []byte, tunnel.FlowWindow), // sized to the agent's send window (spec §7)
 		endCh:   make(chan tunnel.Frame, 1),
 		errCh:   make(chan tunnel.Frame, 1),
 	}

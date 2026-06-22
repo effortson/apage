@@ -114,7 +114,7 @@ func (s *Server) handleGetInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = err
-	gw, sess, online, _ := s.rdb.LookupAgent(r.Context(), in.InstanceID)
+	gw, _, sess, online, _ := s.rdb.LookupAgent(r.Context(), in.InstanceID)
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"instance": in,
 		"connection": map[string]any{

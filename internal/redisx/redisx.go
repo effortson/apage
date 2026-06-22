@@ -118,14 +118,22 @@ func (c *Client) RateLimit(ctx context.Context, key string, limit int, window ti
 
 // --- Agent session registry (spec §19.4) ---
 
-// RegisterAgent maps instance_id -> gateway_id with a TTL strictly below the
-// offline timeout (spec §19.4).
-func (c *Client) RegisterAgent(ctx context.Context, instanceID, gatewayID, sessionID string, ttl time.Duration) error {
-	return c.rdb.HSet(ctx, "agent:"+instanceID,
+// RegisterAgent maps instance_id -> {gateway_id, gateway_url, session_id} with a
+// TTL strictly below the offline timeout (spec §19.4). gatewayURL lets the API
+// route a preview to the specific gateway serving the instance.
+func (c *Client) RegisterAgent(ctx context.Context, instanceID, gatewayID, gatewayURL, sessionID string, ttl time.Duration) error {
+	key := "agent:" + instanceID
+	if err := c.rdb.HSet(ctx, key,
 		"gateway_id", gatewayID,
+		"gateway_url", gatewayURL,
 		"session_id", sessionID,
 		"updated_at", time.Now().Unix(),
-	).Err()
+	).Err(); err != nil {
+		return err
+	}
+	// Set the TTL at registration so the key expires even if no refresh follows
+	// (previously the key had no TTL until the first TouchAgent tick).
+	return c.rdb.Expire(ctx, key, ttl).Err()
 }
 
 // TouchAgent refreshes the TTL of an agent registration (heartbeat).
@@ -133,16 +141,17 @@ func (c *Client) TouchAgent(ctx context.Context, instanceID string, ttl time.Dur
 	return c.rdb.Expire(ctx, "agent:"+instanceID, ttl).Err()
 }
 
-// LookupAgent returns the gateway and session serving an instance, if online.
-func (c *Client) LookupAgent(ctx context.Context, instanceID string) (gatewayID, sessionID string, online bool, err error) {
+// LookupAgent returns the gateway (id + internal URL) and session serving an
+// instance, if online (spec §19.4 routing).
+func (c *Client) LookupAgent(ctx context.Context, instanceID string) (gatewayID, gatewayURL, sessionID string, online bool, err error) {
 	m, err := c.rdb.HGetAll(ctx, "agent:"+instanceID).Result()
 	if err != nil {
-		return "", "", false, err
+		return "", "", "", false, err
 	}
 	if len(m) == 0 {
-		return "", "", false, nil
+		return "", "", "", false, nil
 	}
-	return m["gateway_id"], m["session_id"], true, nil
+	return m["gateway_id"], m["gateway_url"], m["session_id"], true, nil
 }
 
 // UnregisterAgent removes the mapping when a gateway loses the connection.

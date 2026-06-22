@@ -124,7 +124,8 @@ func (s *Server) serveBytes(w http.ResponseWriter, r *http.Request, link *store.
 	switch link.Mode {
 	case "tunnel":
 		s.setDownloadHeaders(cw, name, allowDownload, forceAttachment)
-		if err := s.gw.StreamFile(cw, r, link.InstanceID, *link.FileRef); err != nil {
+		gwURL := s.resolveGatewayURL(r.Context(), link.InstanceID)
+		if err := s.gw.StreamFile(cw, r, gwURL, link.InstanceID, *link.FileRef); err != nil {
 			s.log.Warn("tunnel stream", "err", err, "instance", link.InstanceID)
 			if !headersSent(cw) {
 				httpx.Err(cw, r, http.StatusServiceUnavailable, httpx.CodeServiceUnavailable, "agent offline", true)
@@ -154,6 +155,16 @@ func (c *countingWriter) Flush() {
 	if f, ok := c.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// resolveGatewayURL routes a tunnel preview to the gateway serving the instance,
+// looked up from the registry (spec §19.4). Falls back to the configured URL
+// when the registry has no entry (single-box, or registration not yet propagated).
+func (s *Server) resolveGatewayURL(ctx context.Context, instanceID string) string {
+	if _, gwURL, _, online, err := s.rdb.LookupAgent(ctx, instanceID); err == nil && online && gwURL != "" {
+		return gwURL
+	}
+	return s.cfg.GatewayInternalURL
 }
 
 // meterEgress buffers served bytes against the tenant's egress quota (spec §29).

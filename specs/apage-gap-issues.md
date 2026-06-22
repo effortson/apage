@@ -60,14 +60,16 @@
 
 ## P1 — 标称完成但实为 stub / 缺失
 
-> **进度(branch `fix/p0-security`)**:已修 **012 / 013 / 014 / 015 / 016 / 017 / 018 / 020**(✅),**019 / 022 部分**(🟡),并附带修 P2 的 [[APAGE-035]](lite 文件过期裁剪)。均通过 `go build`/`go vet`/`go test -race`(新增 agent range、gateway version、path size、billing 等测试 + migration 0002)。**023 的 DNS 部分**(CNAME 校验 + 周期 recheck)亦已修,ACME 签发仍待外部。**仍未动**(需外部服务或对现有 tunnel e2e 有回归风险):010 背压(需 credit 协议)、011 registry 路由(多 gateway 基建)、021 OAuth(需 provider 凭据)、023 ACME 签发(需真实域名)、024 Office 转换(需 LibreOffice 容器)。
+> **进度(branch `fix/p0-security`)**:已修 **012 / 013 / 014 / 015 / 016 / 017 / 018 / 020**(✅),**019 / 022 部分**(🟡),并附带修 P2 的 [[APAGE-035]](lite 文件过期裁剪)。均通过 `go build`/`go vet`/`go test -race`(新增 agent range、gateway version、path size、billing 等测试 + migration 0002)。**010 背压(credit 流控)、011 registry 路由、023 DNS(CNAME+周期 recheck)亦已修**,并附带修 [[APAGE-033]](registry TTL)。**仅剩需外部资源的 3 项**:021 OAuth(需 provider 凭据)、023 ACME 签发(需真实域名 + ACME client)、024 Office 转换(需 LibreOffice 容器)。
 
 ### APAGE-010 · Tunnel 背压是假的
+- **状态**:✅ 已修(credit 流控)。tunnel 协议加 `flow` 帧 + `FlowWindow=16`:agent 初始 16 credits,**仅在持有 credit 时才发 chunk**,gateway 每relay 一个 chunk 给访客就回 `flow(+1)`。数学上 dataCh 占用恒 ≤ window,gateway readLoop 永不阻塞(消除 head-of-line),内存有界,慢访客→agent 阻塞在 `awaitCredit`→停读磁盘(真背压)。**能力位 `flowControl` 兜底**:gateway 未授予时 agent 退化为自由发送,新/旧混部不会死锁。新增 `flow_test.go`(含 race)。
 - **现状**:仅 cap=8 的 Go channel,agent 全速读文件推二进制帧,无 window/credit 流控;大文件仍可撑爆 gateway 内存。注释"bounded buffer applies backpressure"系一厢情愿。
 - **证据**:`internal/gateway/session.go:56`、`internal/agent/tunnel.go:163-179`
 - **修复**:加 credit/window 协议,agent 按 gateway 反馈节流。
 
 ### APAGE-011 · 预览路由未用 registry(写死单 gateway)
+- **状态**:✅ 已修(非回归)。gateway 注册时把自身可达 URL(`GATEWAY_ADVERTISE_URL`,默认 = `GATEWAY_INTERNAL_URL`)写入 registry;API 预览前 `resolveGatewayURL` 查 registry 拿到 owning gateway URL 路由,registry miss 时回退配置 URL(单 box 行为不变,为多 gateway 铺路)。顺带修 [[APAGE-033]]:`RegisterAgent` 现在注册即设 TTL(原先首次 TouchAgent 前无 TTL)。
 - **现状**:预览走静态 `GATEWAY_INTERNAL_URL`,`LookupAgent` 仅用于状态展示;多 gateway 路由未接。
 - **证据**:`internal/api/runtime.go:91`、`cmd/api/main.go:67`、`internal/api/instances.go:117`
 - **修复**:预览前查 registry 解析 owning gateway 再拉流。
@@ -162,7 +164,8 @@
 - `internal/redisx/redisx.go` 只有 `InvalidateLink`(DEL),无 populate;link 元数据直读 DB;无 view_count 写缓冲落库 worker。
 
 ### APAGE-033 · RegisterAgent 忽略 ttl 参数
-- `internal/redisx/redisx.go:122` `HSet` 不设过期,key 在首次 `TouchAgent`(+20s)前无 TTL。
+- **状态**:✅ 已修(随 [[APAGE-011]])。`RegisterAgent` 现在 `HSet` 后立即 `Expire(key, ttl)`,注册即有 TTL。
+- `internal/redisx/redisx.go` `HSet` 不设过期,key 在首次 `TouchAgent`(+20s)前无 TTL。
 
 ### APAGE-034 · get-instance 报错的协议版本 + 占位 allowlist
 - `internal/api/instances.go:117-126` 返回服务端 floor 当作 `protocolVersion`,allowlist 为硬编码 note,非 agent 上报值。

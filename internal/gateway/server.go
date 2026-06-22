@@ -113,7 +113,7 @@ func (s *Server) handleAgentConnect(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	// Registry + DB status (spec §19.4): TTL below offline timeout.
-	_ = s.rdb.RegisterAgent(r.Context(), in.InstanceID, s.gatewayID, sessionID, 40*time.Second)
+	_ = s.rdb.RegisterAgent(r.Context(), in.InstanceID, s.gatewayID, s.cfg.GatewayAdvertiseURL, sessionID, 40*time.Second)
 	_ = s.db.SetInstanceStatus(r.Context(), in.InstanceID, "online", cf.AgentVersion)
 	_ = s.db.WriteAudit(r.Context(), audit.Entry{TenantID: in.TenantID, InstanceID: in.InstanceID,
 		Event: audit.AgentConnected, ActorType: audit.ActorInstanceAPIKey, ActorID: in.InstanceID})
@@ -121,7 +121,7 @@ func (s *Server) handleAgentConnect(w http.ResponseWriter, r *http.Request) {
 	_ = sess.writeFrame(tunnel.Frame{
 		Type: tunnel.TypeSessionAccept, SessionID: sessionID, ProtocolVersion: tunnel.ProtocolVersion,
 		MaxConcurrentStreams: s.cfg.MaxConcurrentStreams, MaxChunkBytes: s.cfg.MaxChunkBytes,
-		IdleTimeoutSeconds: s.cfg.IdleTimeoutSeconds,
+		IdleTimeoutSeconds: s.cfg.IdleTimeoutSeconds, FlowControl: true,
 	})
 
 	go sess.heartbeat()
