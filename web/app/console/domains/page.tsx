@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { Button, Table, Td, Badge, Drawer, Input, Skeleton, useToast, CopyField, statusTone } from "@/components/ui";
+import { Button, Table, Td, Badge, Drawer, Input, Skeleton, useToast, CopyField, statusTone, Modal } from "@/components/ui";
 import { relativeTime } from "@/lib/format";
 
 export default function Domains() {
@@ -9,6 +9,7 @@ export default function Domains() {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [add, setAdd] = useState(false);
+  const [diag, setDiag] = useState<any>(null);
 
   const load = () => api<{ items: any[] }>("/custom-domains").then((r) => { setItems(r.items || []); setLoading(false); });
   useEffect(() => { load().catch(() => setLoading(false)); }, []);
@@ -30,13 +31,37 @@ export default function Domains() {
               <Td>{d.certStatus}</Td>
               <Td>{relativeTime(d.lastCheckedAt)}</Td>
               <Td>
-                <Button size="sm" variant="ghost" onClick={async () => { const r = await api<any>(`/custom-domains/${d.domainId}/verify`, { method: "POST" }); toast({ tone: r.status === "verified" ? "success" : "danger", msg: `Status: ${r.status}` }); load(); }}>Check DNS</Button>
+                <Button size="sm" variant="ghost" onClick={async () => {
+                  const r = await api<any>(`/custom-domains/${d.domainId}/verify`, { method: "POST" });
+                  toast({ tone: r.status === "verified" ? "success" : "danger", msg: `Status: ${r.status}` });
+                  if (r.checks) setDiag({ domain: d.domain, ...r });
+                  load();
+                }}>Check DNS</Button>
               </Td>
             </tr>
           ))}
         </Table>
       )}
       {add && <AddDomain onClose={() => setAdd(false)} onDone={() => { setAdd(false); load(); }} />}
+      {diag && (
+        <Modal title={`DNS check — ${diag.domain}`} onClose={() => setDiag(null)}>
+          <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>Status: <Badge tone={statusTone(diag.status)}>{diag.status}</Badge> · cert {diag.certStatus}</p>
+          <DnsCheck label="TXT (ownership)" name={diag.checks.txt.name} expected={diag.checks.txt.expected} observed={undefined} ok={diag.checks.txt.ok} />
+          <DnsCheck label="CNAME (routing)" name={diag.checks.cname.name} expected={diag.checks.cname.expected} observed={diag.checks.cname.observed} ok={diag.checks.cname.ok} />
+          <Button style={{ marginTop: 16 }} onClick={() => setDiag(null)}>Close</Button>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function DnsCheck({ label, name, expected, observed, ok }: { label: string; name: string; expected: string; observed?: string; ok: boolean }) {
+  return (
+    <div style={{ marginTop: 12, padding: 12, border: "1px solid var(--color-border)", borderRadius: "var(--radius-sm)" }}>
+      <div style={{ fontWeight: 600, fontSize: 13 }}>{label} <span style={{ color: ok ? "var(--color-success)" : "var(--color-danger)" }}>{ok ? "✓ ok" : "✗ not found"}</span></div>
+      <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>Record: <code>{name}</code></div>
+      <div style={{ fontSize: 12, marginTop: 4 }}>Expected: <code>{expected}</code></div>
+      {observed !== undefined && <div style={{ fontSize: 12, marginTop: 2 }}>Observed: <code>{observed || "(none)"}</code></div>}
     </div>
   );
 }

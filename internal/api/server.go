@@ -117,6 +117,8 @@ func (s *Server) Router() http.Handler {
 			r.Patch("/members/{membershipId}", s.handleUpdateMember)
 			r.Delete("/members/{membershipId}", s.handleRemoveMember)
 
+			r.Patch("/tenant", s.handleUpdateTenant)
+
 			r.Get("/usage", s.handleUsage)
 			r.Get("/usage/timeseries", s.handleUsageTimeseries)
 			r.Get("/billing", s.handleBilling)

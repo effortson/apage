@@ -204,7 +204,8 @@
 - 无 SSE/WS/轮询;仅一次性 `setTimeout`。
 
 ### APAGE-051 · Settings 为占位
-- 大部分静态卡片;无租户资料编辑;安全卡仅跳转 Instances;**危险区无删除租户按钮**;只接了数据删除请求。`web/app/console/settings/page.tsx`
+- **状态**:✅ 已修。新增**租户名编辑**(后端 `PATCH /api/v1/tenant` + `UpdateTenantName`,admin)+ 表单;危险区改为明确的「删除租户数据」按钮(typed `DELETE` 二次确认,接 GDPR data-deletion)。安全卡仍指向 Instances(凭据按实例管理,合理)。
+- 大部分静态卡片;无租户资料编辑;危险区无按钮。
 
 ### APAGE-052 · Admin 控制台为静态壳
 - 指标硬编码 `"—"`,无 API/鉴权/交互。`web/app/admin/page.tsx:21-24`
@@ -224,10 +225,11 @@
 - **状态**:🟡 部分修(a11y 已补)。`useDialogA11y`:Modal/Drawer 现有**焦点陷阱 + Esc 关闭 + 焦点还原 + `role=dialog`/`aria-modal`**。**仍待**:补齐 IconButton/Tag/Tabs/Tooltip/DateRange 等组件(按页面实际需要增量加,如 DateRange 随 [[APAGE-058]] 审计)。
 
 ### APAGE-057 · Usage 页缺趋势图/计费/升级,无 RBAC 拆分
-- 仅进度条;无图表/计费信息/升级 CTA/配额 Banner。`web/app/console/usage/page.tsx`
+- **状态**:✅ 已修。接 `/usage/timeseries`(30 天 egress SVG 趋势图)+ `/billing`(套餐/价格/升级项,owner-only:非 owner 静默 403 隐藏 billing 卡=RBAC 拆分)+ ≥80% 配额预警 Banner + 升级 CTA(链 /pricing,`autoCharge:false`)。
+- 仅进度条;无图表/计费/升级/RBAC 拆分。
 
 ### APAGE-058 · 零散功能缺失
-- 链接详情视图 + 批量撤销;上传进度条 + 真实状态轮询 + presign 路径;审计 DateRange;域名向导失败诊断(期望 vs 实测)。
+- **状态**:🟡 大部分修。✅ 链接**批量撤销**(多选 + typed `REVOKE` 二确)、✅ **上传进度条**(XHR 真实进度,+ 列表 5s 轮询见 [[APAGE-050]])、✅ **域名失败诊断**(Check DNS 弹窗显示 TXT/CNAME 期望 vs 实测 + ✓/✗)。**仍待**:链接详情视图、上传 presign 大文件路径、审计 DateRange(需后端 from/to 过滤)。
 
 ---
 

@@ -20,6 +20,10 @@ export default function Links() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [revoke, setRevoke] = useState<any>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchRevoke, setBatchRevoke] = useState(false);
+
+  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const load = (reset = true) => {
     const q = new URLSearchParams({ limit: "20" });
@@ -47,17 +51,21 @@ export default function Links() {
         <Select value={filter.mode} onChange={(e) => setFilter({ ...filter, mode: e.target.value })}>
           <option value="">All modes</option><option value="tunnel">Tunnel</option><option value="cloud">Cloud</option>
         </Select>
+        {selected.size > 0 && (
+          <Button variant="danger" onClick={() => setBatchRevoke(true)}>Revoke selected ({selected.size})</Button>
+        )}
       </div>
 
       {loading ? <Skeleton rows={5} /> : items.length === 0 ? (
         <EmptyState title="No preview links" hint="Create a tunnel or cloud preview link." action={<Button onClick={() => setShowCreate(true)}>Create link</Button>} />
       ) : (
         <>
-          <Table head={["Name", "Link ID", "Mode", "Policy", "Status", "Expires", "Views", ""]}>
+          <Table head={["", "Name", "Link ID", "Mode", "Policy", "Status", "Expires", "Views", ""]}>
             {items.map((l) => {
               const st = linkStatus(l);
               return (
                 <tr key={l.linkId}>
+                  <Td>{st === "active" && <input type="checkbox" aria-label={`select ${l.linkId}`} checked={selected.has(l.linkId)} onChange={() => toggle(l.linkId)} />}</Td>
                   <Td>{l.displayName || "—"}</Td>
                   <Td mono>{l.linkId}</Td>
                   <Td><Badge tone={l.mode === "tunnel" ? "info" : "muted"}>{l.mode}</Badge></Td>
@@ -81,6 +89,17 @@ export default function Links() {
           onConfirm={async () => {
             await api(`/preview-links/${revoke.linkId}/revoke`, { method: "POST" });
             setRevoke(null); load(true); toast({ tone: "success", msg: "Revoked (audit logged)" });
+          }} />
+      )}
+      {batchRevoke && (
+        <ConfirmDialog title="Revoke selected links" danger confirmWord="REVOKE"
+          message={`Revoke ${selected.size} selected link(s)? Visitors will get a 410 within seconds. This cannot be undone.`}
+          onCancel={() => setBatchRevoke(false)}
+          onConfirm={async () => {
+            const ids = Array.from(selected);
+            await Promise.allSettled(ids.map((id) => api(`/preview-links/${id}/revoke`, { method: "POST" })));
+            setBatchRevoke(false); setSelected(new Set()); load(true);
+            toast({ tone: "success", msg: `Revoked ${ids.length} link(s) (audit logged)` });
           }} />
       )}
     </div>

@@ -230,6 +230,12 @@ func (s *Store) QuotaFor(ctx context.Context, tenantID string) (*Quota, error) {
 }
 
 // AddStorageUsed adjusts storage usage (delta may be negative).
+// UpdateTenantName renames a tenant (settings profile, UI §7.9).
+func (s *Store) UpdateTenantName(ctx context.Context, tenantID, name string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE tenants SET name=$2 WHERE tenant_id=$1`, tenantID, name)
+	return err
+}
+
 func (s *Store) AddStorageUsed(ctx context.Context, tenantID string, delta int64) error {
 	_, err := s.Pool.Exec(ctx,
 		`UPDATE quotas SET storage_bytes_used = GREATEST(0, storage_bytes_used + $2) WHERE tenant_id=$1`,
