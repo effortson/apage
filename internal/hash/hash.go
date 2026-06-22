@@ -70,6 +70,18 @@ func Password(plain string) (string, error) {
 	), nil
 }
 
+// dummyHash is a throwaway argon2id hash computed once at startup. DummyVerify
+// runs a real verification against it so the account-not-found path spends the
+// same CPU as a real check, denying a login-timing user-enumeration oracle.
+var dummyHash, _ = Password("apage-login-timing-equalizer")
+
+// DummyVerify performs a constant-cost password verification whose result is
+// discarded. Call it on the "user/admin not found" branch of a login handler so
+// the response timing does not reveal whether an account exists.
+func DummyVerify(plain string) {
+	_, _ = VerifyPassword(plain, dummyHash)
+}
+
 // VerifyPassword checks a plaintext password against an encoded argon2id hash in
 // constant time.
 func VerifyPassword(plain, encoded string) (bool, error) {

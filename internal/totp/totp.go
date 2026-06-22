@@ -47,13 +47,23 @@ func Code(secret string, t time.Time) (string, error) {
 // Verify checks a code against the secret for the current and adjacent windows
 // (±1 step) to tolerate clock skew. Constant-time comparison.
 func Verify(secret, code string, t time.Time) bool {
+	_, ok := VerifyStep(secret, code, t)
+	return ok
+}
+
+// VerifyStep is like Verify but also returns the time-step counter the code
+// matched. Callers persist this counter to enforce single-use per step so a
+// captured code cannot be replayed within its (skew-tolerant) validity window
+// (RFC 6238 §5.2). Constant-time comparison.
+func VerifyStep(secret, code string, t time.Time) (int64, bool) {
 	code = strings.TrimSpace(code)
 	for _, skew := range []time.Duration{0, -period * time.Second, period * time.Second} {
-		if c, err := Code(secret, t.Add(skew)); err == nil && subtle.ConstantTimeCompare([]byte(c), []byte(code)) == 1 {
-			return true
+		tt := t.Add(skew)
+		if c, err := Code(secret, tt); err == nil && subtle.ConstantTimeCompare([]byte(c), []byte(code)) == 1 {
+			return tt.Unix() / period, true
 		}
 	}
-	return false
+	return 0, false
 }
 
 // OtpauthURI builds the otpauth:// URI an authenticator app scans to enroll.
