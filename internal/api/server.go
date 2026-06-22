@@ -81,6 +81,12 @@ func (s *Server) Router() http.Handler {
 		r.Post("/auth/forgot-password", s.handleForgotPassword)
 		r.Post("/auth/reset-password", s.handleResetPassword)
 
+		// OAuth (spec §25) — browser GET navigations; inert until a provider is
+		// configured with a client id/secret.
+		r.Get("/auth/providers", s.handleOAuthProviders)
+		r.Get("/auth/oauth/{provider}/start", s.handleOAuthStart)
+		r.Get("/auth/oauth/{provider}/callback", s.handleOAuthCallback)
+
 		// Public abuse report (spec §30) — no auth.
 		r.Post("/public/abuse-reports", s.handleAbuseReport)
 

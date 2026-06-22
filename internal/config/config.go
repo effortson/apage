@@ -54,6 +54,13 @@ type Config struct {
 	// Abuse governance (spec §15.5, V1)
 	SafeBrowsingAPIKey string
 
+	// OAuth providers (spec §25). Empty client id/secret => provider disabled.
+	OAuthRedirectBase   string // base URL for the callback redirect_uri (default https://<ConsoleDomain>)
+	OAuthGitHubClientID string
+	OAuthGitHubSecret   string
+	OAuthGoogleClientID string
+	OAuthGoogleSecret   string
+
 	// Service bind addresses
 	APIAddr     string // :8080
 	GatewayAddr string // :8090
@@ -99,6 +106,11 @@ func Load() (*Config, error) {
 		SMTPPass:                env("SMTP_PASS", ""),
 		MailFrom:                env("MAIL_FROM", "no-reply@apage.local"),
 		SafeBrowsingAPIKey:      env("SAFE_BROWSING_API_KEY", ""),
+		OAuthRedirectBase:       env("OAUTH_REDIRECT_BASE", ""),
+		OAuthGitHubClientID:     env("OAUTH_GITHUB_CLIENT_ID", ""),
+		OAuthGitHubSecret:       env("OAUTH_GITHUB_CLIENT_SECRET", ""),
+		OAuthGoogleClientID:     env("OAUTH_GOOGLE_CLIENT_ID", ""),
+		OAuthGoogleSecret:       env("OAUTH_GOOGLE_CLIENT_SECRET", ""),
 		APIAddr:                 env("API_ADDR", ":8080"),
 		GatewayAddr:             env("GATEWAY_ADDR", ":8090"),
 		MetricsAddr:             env("METRICS_ADDR", ":9090"),
@@ -113,6 +125,9 @@ func Load() (*Config, error) {
 	}
 	if c.GatewayAdvertiseURL == "" {
 		c.GatewayAdvertiseURL = c.GatewayInternalURL
+	}
+	if c.OAuthRedirectBase == "" {
+		c.OAuthRedirectBase = "https://" + c.ConsoleDomain
 	}
 	return c, nil
 }

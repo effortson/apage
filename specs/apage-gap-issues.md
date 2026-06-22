@@ -60,7 +60,7 @@
 
 ## P1 — 标称完成但实为 stub / 缺失
 
-> **进度(branch `fix/p0-security`)**:已修 **012 / 013 / 014 / 015 / 016 / 017 / 018 / 020**(✅),**019 / 022 部分**(🟡),并附带修 P2 的 [[APAGE-035]](lite 文件过期裁剪)。均通过 `go build`/`go vet`/`go test -race`(新增 agent range、gateway version、path size、billing 等测试 + migration 0002)。**010 背压(credit 流控)、011 registry 路由、023 DNS(CNAME+周期 recheck)亦已修**,并附带修 [[APAGE-033]](registry TTL)。**仅剩需外部资源的 3 项**:021 OAuth(需 provider 凭据)、023 ACME 签发(需真实域名 + ACME client)、024 Office 转换(需 LibreOffice 容器)。
+> **进度(branch `fix/p0-security`)**:已修 **012 / 013 / 014 / 015 / 016 / 017 / 018 / 020**(✅),**019 / 022 部分**(🟡),并附带修 P2 的 [[APAGE-035]](lite 文件过期裁剪)。均通过 `go build`/`go vet`/`go test -race`(新增 agent range、gateway version、path size、billing 等测试 + migration 0002)。**010 背压(credit 流控)、011 registry 路由、023 DNS(CNAME+周期 recheck)亦已修**,并附带修 [[APAGE-033]](registry TTL)。**021 OAuth 亦已修**(config-gated 真实流程,配 provider 凭据即生效)。**仅剩 2 项需外部基建**:023 ACME 签发(需真实域名 + ACME client)、024 Office 转换(需 LibreOffice 容器)。
 
 ### APAGE-010 · Tunnel 背压是假的
 - **状态**:✅ 已修(credit 流控)。tunnel 协议加 `flow` 帧 + `FlowWindow=16`:agent 初始 16 credits,**仅在持有 credit 时才发 chunk**,gateway 每relay 一个 chunk 给访客就回 `flow(+1)`。数学上 dataCh 占用恒 ≤ window,gateway readLoop 永不阻塞(消除 head-of-line),内存有界,慢访客→agent 阻塞在 `awaitCredit`→停读磁盘(真背压)。**能力位 `flowControl` 兜底**:gateway 未授予时 agent 退化为自由发送,新/旧混部不会死锁。新增 `flow_test.go`(含 race)。
@@ -129,6 +129,7 @@
 - **修复**:补租户计划上限层 + 创建时拒绝过期 backing。
 
 ### APAGE-021 · OAuth 完全不存在
+- **状态**:✅ 已修(config-gated,真实流程)。`internal/api/oauth.go` 手写完整 OAuth2 流程:`/auth/oauth/{provider}/start`(state cookie 防 CSRF + 跳 provider)→ `/callback`(校验 state → 换 token → 取**已验证**邮箱 → 按邮箱 login 或自动建号 `auth_provider=oauth` → 起 session → 跳 /console)。支持 GitHub/Google;`/auth/providers` 发现端点 + login 页按已配置 provider 渲染按钮。未配 client id/secret 时该 provider 自动禁用(返回 404),**绝不伪装已接通**。无 provider 凭据无法 e2e 验证,但代码真实、符合 OAuth2 规范(同 `S3_PUBLIC_ENDPOINT` 的 config-gated 模式)。
 - **现状**:全仓无 `oauth` 路由/handler;`AuthProvider` 永远 `"password"`。文档 🟡"路由已描述"偏乐观,实为 ❌。
 - **证据**:`internal/api/server.go:73-79`、`internal/api/auth.go:57`
 - **修复**:接 provider start/callback,或在文档/UI 移除 OAuth 入口。
