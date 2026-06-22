@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { adminApi, ApiException } from "@/lib/api";
-import { Card, Banner, Badge, Stat, Button, Input, Table } from "@/components/ui";
+import { Card, Banner, Badge, Stat, Button, Input, Table, Td } from "@/components/ui";
+import { relativeTime } from "@/lib/format";
 
 type Overview = { tenants: number; onlineInstances: number; activeLinks: number; queues: Record<string, number> };
 type Tenant = { tenantId: string; name: string; plan: string; trustLevel: string; status: string };
@@ -41,8 +42,96 @@ export default function Admin() {
         <Stat label="Scan queue" value={String(overview?.queues?.scan ?? "—")} />
       </div>
 
-      <Tenants />
+      <AdminTabs />
     </main>
+  );
+}
+
+function AdminTabs() {
+  const [tab, setTab] = useState<"tenants" | "abuse" | "audit">("tenants");
+  const tabs: [string, typeof tab][] = [["Tenants", "tenants"], ["Abuse queue", "abuse"], ["Global audit", "audit"]];
+  return (
+    <div>
+      <div role="tablist" style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--color-border)", marginBottom: 16 }}>
+        {tabs.map(([label, key]) => (
+          <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}
+            style={{ background: "none", border: "none", borderBottom: tab === key ? "2px solid var(--color-primary)" : "2px solid transparent",
+              padding: "8px 12px", cursor: "pointer", color: tab === key ? "var(--color-text)" : "var(--color-text-muted)", fontWeight: tab === key ? 600 : 400 }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === "tenants" && <Tenants />}
+      {tab === "abuse" && <Abuse />}
+      {tab === "audit" && <AuditLog />}
+    </div>
+  );
+}
+
+function Abuse() {
+  const [items, setItems] = useState<any[]>([]);
+  const [status, setStatus] = useState("open");
+  async function load() {
+    try { const r = await adminApi<{ items: any[] }>(`/abuse-reports?status=${status}`); setItems(r.items || []); } catch { setItems([]); }
+  }
+  useEffect(() => { load(); }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
+  async function act(id: string, s: "actioned" | "dismissed") {
+    await adminApi(`/abuse-reports/${id}/action`, { method: "POST", body: { status: s } });
+    load();
+  }
+  return (
+    <Card title="Abuse reports">
+      <div style={{ marginBottom: 12 }}>
+        <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option value="open">open</option><option value="actioned">actioned</option><option value="dismissed">dismissed</option><option value="">all</option>
+        </select>
+      </div>
+      <Table head={["Category", "Link", "Detail", "Status", "When", ""]}>
+        {items.map((a) => (
+          <tr key={a.reportId}>
+            <Td><Badge tone="warning">{a.category}</Badge></Td>
+            <Td mono>{a.linkId || "—"}</Td>
+            <Td>{(a.detail || "").slice(0, 80)}</Td>
+            <Td>{a.status}</Td>
+            <Td>{relativeTime(a.createdAt)}</Td>
+            <Td>{a.status === "open" && (
+              <span style={{ display: "flex", gap: 6 }}>
+                <Button size="sm" variant="danger" onClick={() => act(a.reportId, "actioned")}>Action</Button>
+                <Button size="sm" variant="secondary" onClick={() => act(a.reportId, "dismissed")}>Dismiss</Button>
+              </span>
+            )}</Td>
+          </tr>
+        ))}
+      </Table>
+    </Card>
+  );
+}
+
+function AuditLog() {
+  const [items, setItems] = useState<any[]>([]);
+  const [event, setEvent] = useState("");
+  async function load() {
+    try { const r = await adminApi<{ items: any[] }>(`/audit-logs?limit=50${event ? `&event=${encodeURIComponent(event)}` : ""}`); setItems(r.items || []); } catch { setItems([]); }
+  }
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <Card title="Global audit (cross-tenant)">
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <Input placeholder="event filter, e.g. tenant.suspended" value={event} onChange={(e) => setEvent(e.target.value)} />
+        <Button variant="secondary" onClick={load}>Filter</Button>
+      </div>
+      <Table head={["Event", "Tenant", "Actor", "Resource", "When"]}>
+        {items.map((a) => (
+          <tr key={a.eventId}>
+            <Td mono>{a.event}</Td>
+            <Td mono>{a.tenantId || "—"}</Td>
+            <Td>{a.actorType}</Td>
+            <Td mono>{a.resourceId || "—"}</Td>
+            <Td>{relativeTime(a.createdAt)}</Td>
+          </tr>
+        ))}
+      </Table>
+    </Card>
   );
 }
 

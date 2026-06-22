@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { api, setTenant, getTenant } from "@/lib/api";
 import { ThemeToggle } from "@/components/theme";
 import { Badge } from "@/components/ui";
+import { useT, LocaleToggle } from "@/lib/i18n";
 
 type Session = {
   user: { userId: string; email: string; emailVerified: boolean };
@@ -29,6 +30,7 @@ const nav: [string, string, string][] = [
 export default function ConsoleLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const t = useT();
   const [session, setSession] = useState<Session | null>(null);
   const [tenant, setT] = useState<string | null>(null);
 
@@ -64,7 +66,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
                 color: active ? "var(--color-primary)" : "var(--color-text-muted)",
                 background: active ? "var(--color-primary-subtle)" : "transparent",
                 fontWeight: active ? 600 : 400, textDecoration: "none",
-              }}>{label}</Link>
+              }}>{t(label)}</Link>
             );
           })}
         </nav>
@@ -79,9 +81,10 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
             {current && <Badge tone="info">{current.plan}</Badge>}
             {current && <span style={{ fontSize: 13, color: "var(--color-text-muted)" }}>{current.role}</span>}
             <span style={{ fontSize: 13 }}>{session.user.email}</span>
+            <LocaleToggle />
             <ThemeToggle />
             <button onClick={async () => { await api("/auth/logout", { method: "POST", tenant: false }); router.push("/login"); }}
-              style={{ background: "none", border: "1px solid var(--color-border)", borderRadius: "var(--radius-sm)", padding: "4px 8px", cursor: "pointer", color: "var(--color-text-muted)" }}>Sign out</button>
+              style={{ background: "none", border: "1px solid var(--color-border)", borderRadius: "var(--radius-sm)", padding: "4px 8px", cursor: "pointer", color: "var(--color-text-muted)" }}>{t("Sign out")}</button>
           </div>
         </header>
         <main style={{ flex: 1, padding: "var(--space-5)", maxWidth: 1280 }}>{children}</main>

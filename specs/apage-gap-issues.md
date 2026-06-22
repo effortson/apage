@@ -208,7 +208,7 @@
 - 大部分静态卡片;无租户资料编辑;危险区无按钮。
 
 ### APAGE-052 · Admin 控制台为静态壳
-- 指标硬编码 `"—"`,无 API/鉴权/交互。`web/app/admin/page.tsx:21-24`
+- **状态**:✅ 已修(随 [[APAGE-037]] + 本批)。`/admin` 接上真实后端:登录+MFA、overview 实时指标、租户管理(suspend/restore/trust),本批再加 **Abuse 工单队列**(list + action/dismiss)与**跨租户全局审计**(event 过滤)两个 Tab。仍待:系统健康/SLO 实时面板、域名运维面板(增量)。
 
 ### APAGE-053 · 缺 OAuth / 邮箱验证 / 忘记密码页
 - **状态**:✅ 已修。新增 `/verify`(token 验证 + 重发)、`/forgot`(防枚举,恒成功提示)、`/reset`(token + 新密码)页,接已有 verify-email/resend/forgot/reset 后端;login 页加 OAuth 按钮(021)+ "Forgot password?" 链接。
@@ -219,7 +219,7 @@
 - session 带 `role` 但只展示,9 个导航对所有角色全显。
 
 ### APAGE-055 · 无真正 i18n
-- 硬编码英文,`lang="en"` 固定;数字未本地化。
+- **状态**:🟡 框架 + 关键面已做。新增 `lib/i18n`:`LocaleProvider`/`useT`/`LocaleToggle`(en/zh,localStorage 持久化,自动按 `navigator.language` 初值,动态设 `<html lang>`);format helpers 改用 `Intl.RelativeTimeFormat`/`toLocaleString(locale)` 本地化时间/数字/字节;导航 + 常用串接 `t()` + 顶栏语言切换。**仍待**:逐页 body 文案翻译(字典已就绪,增量补 zh 即可,fallback 英文不破)。
 
 ### APAGE-056 · 组件库 ~18/28 + Modal/Drawer 无焦点陷阱
 - **状态**:🟡 部分修(a11y 已补)。`useDialogA11y`:Modal/Drawer 现有**焦点陷阱 + Esc 关闭 + 焦点还原 + `role=dialog`/`aria-modal`**。**仍待**:补齐 IconButton/Tag/Tabs/Tooltip/DateRange 等组件(按页面实际需要增量加,如 DateRange 随 [[APAGE-058]] 审计)。
