@@ -29,7 +29,7 @@ func (s *Server) handleDataDeletion(w http.ResponseWriter, r *http.Request) {
 		ActorType: audit.ActorUser, ActorID: au.UserID, ResourceType: "tenant", ResourceID: au.TenantID,
 		Reason: "gdpr_ccpa_request"})
 	httpx.JSON(w, http.StatusOK, map[string]any{
-		"deleted":      map[string]int{"files": res.Files, "fileRefs": res.FileRefs, "links": res.Links},
+		"deleted":      map[string]int{"files": res.Files, "links": res.Links},
 		"confirmation": "data deletion completed; object cleanup queued with retry",
 	})
 }

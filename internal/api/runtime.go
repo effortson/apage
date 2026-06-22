@@ -122,26 +122,14 @@ func (s *Server) consumeView(w http.ResponseWriter, r *http.Request, link *store
 	return true
 }
 
-// serveBytes streams a link's backing bytes (tunnel via gateway or cloud object),
-// honoring Range, and meters the egress it produces (spec §29). forceAttachment
-// serves a download rather than inline content.
+// serveBytes streams a link's backing cloud object, honoring Range, and meters
+// the egress it produces (spec §29). forceAttachment serves a download rather
+// than inline content.
 func (s *Server) serveBytes(w http.ResponseWriter, r *http.Request, link *store.PreviewLink, name string, allowDownload, forceAttachment, allowRedirect bool) {
 	cw := &countingWriter{ResponseWriter: w}
-	switch link.Mode {
-	case "tunnel":
-		s.setDownloadHeaders(cw, name, allowDownload, forceAttachment)
-		gwURL := s.resolveGatewayURL(r.Context(), link.InstanceID)
-		if err := s.gw.StreamFile(cw, r, gwURL, link.InstanceID, *link.FileRef); err != nil {
-			s.log.Warn("tunnel stream", "err", err, "instance", link.InstanceID)
-			if !headersSent(cw) {
-				httpx.Err(cw, r, http.StatusServiceUnavailable, httpx.CodeServiceUnavailable, "agent offline", true)
-			}
-		}
-	case "cloud":
-		s.serveCloud(cw, r, link, name, allowDownload, forceAttachment, allowRedirect)
-	}
+	s.serveCloud(cw, r, link, name, allowDownload, forceAttachment, allowRedirect)
 	if cw.n > 0 {
-		s.meterEgress(link.TenantID, link.Mode, cw.n)
+		s.meterEgress(link.TenantID, cw.n)
 	}
 }
 
@@ -163,23 +151,9 @@ func (c *countingWriter) Flush() {
 	}
 }
 
-// resolveGatewayURL routes a tunnel preview to the gateway serving the instance,
-// looked up from the registry (spec §19.4). Falls back to the configured URL
-// when the registry has no entry (single-box, or registration not yet propagated).
-func (s *Server) resolveGatewayURL(ctx context.Context, instanceID string) string {
-	if reg, online, err := s.rdb.LookupAgent(ctx, instanceID); err == nil && online && reg.GatewayURL != "" {
-		return reg.GatewayURL
-	}
-	return s.cfg.GatewayInternalURL
-}
-
-// meterEgress buffers served bytes against the tenant's egress quota (spec §29).
-func (s *Server) meterEgress(tenantID, mode string, n int64) {
-	dim := "tunnel_egress"
-	if mode == "cloud" {
-		dim = "cloud_egress"
-	}
-	_ = s.rdb.AddUsage(context.Background(), tenantID, dim, n)
+// meterEgress buffers served bytes against the tenant's cloud egress quota (spec §29).
+func (s *Server) meterEgress(tenantID string, n int64) {
+	_ = s.rdb.AddUsage(context.Background(), tenantID, "cloud_egress", n)
 }
 
 // handleFileDirect serves a cloud file direct link /f/{fileId}/{secret} (spec §16/§30).
@@ -257,26 +231,19 @@ func (s *Server) admitLink(w http.ResponseWriter, r *http.Request, linkID, secre
 	return &row.PreviewLink, true
 }
 
-// resolveBacking loads the mime/displayName/backing-expiry for a link.
+// resolveBacking loads the mime/displayName/backing-expiry for a link's cloud file.
 func (s *Server) resolveBacking(r *http.Request, link *store.PreviewLink) (mime, name string, backingExpiry *time.Time, err error) {
-	switch link.Mode {
-	case "tunnel":
-		fr, e := s.db.FileRefByID(r.Context(), *link.FileRef)
-		if e != nil {
-			return "", "", nil, errGone
-		}
-		return fr.MimeType, fr.DisplayName, fr.ExpiresAt, nil
-	case "cloud":
-		f, e := s.db.FileByIDAny(r.Context(), *link.FileID)
-		if e != nil {
-			return "", "", nil, errGone
-		}
-		if f.Status != "ready" {
-			return "", "", nil, errGone
-		}
-		return f.MimeType, f.DisplayName, f.ExpiresAt, nil
+	if link.FileID == nil {
+		return "", "", nil, errGone
 	}
-	return "", "", nil, errGone
+	f, e := s.db.FileByIDAny(r.Context(), *link.FileID)
+	if e != nil {
+		return "", "", nil, errGone
+	}
+	if f.Status != "ready" {
+		return "", "", nil, errGone
+	}
+	return f.MimeType, f.DisplayName, f.ExpiresAt, nil
 }
 
 var errGone = errors.New("gone")
@@ -304,7 +271,7 @@ func (s *Server) serveCloud(w http.ResponseWriter, r *http.Request, link *store.
 		switch previewCategory(f.MimeType) {
 		case "image", "pdf":
 			if signed, err := s.store.PresignGet(f.StorageKey, name); err == nil {
-				s.meterEgress(link.TenantID, "cloud", f.Size) // the object store serves the bytes
+				s.meterEgress(link.TenantID, f.Size) // the object store serves the bytes
 				http.Redirect(w, r, signed, http.StatusFound)
 				return
 			}
@@ -415,11 +382,6 @@ type rsAdapter struct {
 
 func (a rsAdapter) Read(p []byte) (int, error)                { return a.rsc.Read(p) }
 func (a rsAdapter) Seek(off int64, whence int) (int64, error) { return a.rsc.Seek(off, whence) }
-
-func headersSent(http.ResponseWriter) bool {
-	// chi/std lib do not expose this; treat as best-effort false.
-	return false
-}
 
 // passwordPageHTML renders the minimal password gate (spec §9). Server-rendered,
 // no scripts beyond a tiny inline fetch; CSP for text applies.

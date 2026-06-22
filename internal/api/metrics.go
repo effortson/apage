@@ -19,7 +19,7 @@ func (s *Server) MetricsHandler() http.Handler {
 
 // handleMetricsExposition writes Prometheus-text business metrics (spec §18).
 func (s *Server) handleMetricsExposition(w http.ResponseWriter, r *http.Request) {
-	online, _ := s.db.CountOnlineInstances(r.Context())
+	instances, _ := s.db.CountInstances(r.Context())
 	active, _ := s.db.CountActiveLinks(r.Context())
 	scanQ, _ := s.rdb.QueueLen(r.Context(), "scan")
 	deleteQ, _ := s.rdb.QueueLen(r.Context(), "delete")
@@ -29,7 +29,7 @@ func (s *Server) handleMetricsExposition(w http.ResponseWriter, r *http.Request)
 	g := func(name, help string, v int64) {
 		fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s gauge\n%s %d\n", name, help, name, name, v)
 	}
-	g("apage_agent_online_count", "Agent instances currently online", int64(online))
+	g("apage_instances_count", "Agent instances provisioned", int64(instances))
 	g("apage_active_links_count", "Preview links currently servable", int64(active))
 	g("apage_scan_queue_depth", "Pending file-scan jobs", scanQ)
 	g("apage_delete_queue_depth", "Pending object-delete jobs", deleteQ)

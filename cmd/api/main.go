@@ -13,7 +13,6 @@ import (
 
 	"github.com/apage/apage/internal/api"
 	"github.com/apage/apage/internal/config"
-	"github.com/apage/apage/internal/gatewayclient"
 	"github.com/apage/apage/internal/mail"
 	"github.com/apage/apage/internal/objstore"
 	"github.com/apage/apage/internal/redisx"
@@ -53,8 +52,9 @@ func main() {
 		PresignTTL: time.Duration(cfg.PresignURLTTLSeconds) * time.Second, LifecycleDays: cfg.S3LifecycleDays,
 	})
 	if err != nil {
-		// Object storage is optional for tunnel-only MVP; log and continue.
-		log.Warn("object storage unavailable (cloud upload disabled)", "err", err)
+		// Object storage is required in cloud-only mode — fail fast.
+		log.Error("object storage unavailable (required in cloud-only mode)", "err", err)
+		os.Exit(1)
 	}
 
 	var mailer api.Mailer
@@ -64,13 +64,7 @@ func main() {
 		mailer = mail.LogMailer{Log: log}
 	}
 
-	gw := gatewayclient.New(cfg.GatewayInternalURL, cfg.GatewayInternalSecret)
-
-	var objIface api.ObjectStore
-	if obj != nil {
-		objIface = obj
-	}
-	srv := api.New(cfg, db, rdb, log, mailer, gw, objIface)
+	srv := api.New(cfg, db, rdb, log, mailer, obj)
 	srv.BootstrapAdmin(ctx) // seed the first platform admin from config (spec §8)
 
 	httpSrv := &http.Server{

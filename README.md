@@ -1,8 +1,7 @@
 # APAGE
 
-Preview & Share Provider for agents — file preview, temporary sharing, and
-subdomain access over a reverse tunnel (DNS + Tunnel) or cloud hosting
-(DNS + Tunnel + Cloud). Built per [`specs/apage-spec.md`](specs/apage-spec.md)
+Preview & Share Provider for agents — cloud-hosted file preview, temporary
+sharing, and subdomain access. Built per [`specs/apage-spec.md`](specs/apage-spec.md)
 and [`specs/apage-ui-spec.md`](specs/apage-ui-spec.md); implementation plan in
 [`specs/apage-implementation-checklist.md`](specs/apage-implementation-checklist.md).
 
@@ -10,9 +9,9 @@ and [`specs/apage-ui-spec.md`](specs/apage-ui-spec.md); implementation plan in
 
 ```
 apage-api      REST control plane + data plane + visitor runtime (/p, /f)
-apage-gateway  WebSocket tunnel: agent sessions, stream routing, backpressure
 apage-worker   async scan / expiry-sweep / object-delete / usage-flush / domain-recheck
-apage-agent    customer-side: allowlist, path validation, local register, tunnel client
+apage-cli      customer-side: runs an MCP server an agent calls to upload files
+               and create/manage cloud preview links
 web            Next.js frontend: marketing, auth, console, admin shell
 ```
 
@@ -21,8 +20,9 @@ counter / queue), S3-compatible object storage (cloud files).
 
 ## Run locally
 
-**One command** — starts infra, builds, and runs api + gateway + worker + web in
-this terminal with colored per-service output; `Ctrl+C` stops everything:
+**One command** — starts infra, builds, and runs api + worker + web in this
+terminal with colored per-service output; `Ctrl+C` stops everything (apage-cli is
+built too, but you run it manually — see "Try the cloud + MCP flow"):
 
 ```bash
 make dev          # or: ./scripts/dev.sh
@@ -35,7 +35,6 @@ Then open `http://localhost:3000`. Output looks like:
 ```
 dev    │ starting infra (postgres :5433, redis :6379, minio :9100)…
 API    │ {"level":"INFO","msg":"apage-api listening","addr":":8080"}
-GATEWAY│ {"level":"INFO","msg":"apage-gateway listening","addr":":8090"}
 WORKER │ {"level":"INFO","msg":"apage-worker started"}
 WEB    │  ✓ Ready in 1148ms
 ```
@@ -47,35 +46,44 @@ docker compose up -d postgres redis minio   # Postgres :5433, Redis :6379, MinIO
 cp .env.example .env
 make build
 set -a; source .env; set +a
-./bin/apage-api & ./bin/apage-gateway & ./bin/apage-worker &
+./bin/apage-api & ./bin/apage-worker &
 cd web && npm install && npm run dev          # :3000 (proxies /api/v1 -> :8080)
 ```
 </details>
 
 Full stack via Docker: `make up` (adds Caddy edge with wildcard + TLS).
 
-## Try the tunnel flow
+## Try the cloud + MCP flow
+
+Links are created by the agent through `apage-cli`'s MCP server — not by hand in
+the console. Register + create an instance in the console (or via API) to get an
+`instanceApiKey`, then:
 
 ```bash
-# Register + create an instance in the console (or via API), then:
-apage-agent init  --instance alice --agent-type custom --workspace ~/outputs \
-                  --gateway ws://localhost:8090 --api http://localhost:8080 --api-key <instanceApiKey>
-apage-agent start --token <agentToken>
-apage-agent share --instance alice --path report.pdf --expires 3600
-# -> Preview ready: https://alice.preview.localhost/p/plink_.../aps_...
+# Configure the CLI with the instance API key and the workspace it may upload from.
+apage-cli init --instance alice --workspace ~/outputs \
+               --api http://localhost:8080 --api-key <instanceApiKey>
+
+# Start the MCP server (foreground; Ctrl+C to stop). Point your agent at it.
+apage-cli mcp
 ```
+
+Your agent then calls the `create_preview_link` MCP tool (e.g.
+`{path: "report.pdf"}`). `apage-cli` uploads the file, waits for the worker scan
+to mark it `ready`, creates a cloud preview link, and returns its URL. In dev the
+preview opens at `http://localhost:8080/p/<linkId>/<secret>`. Other MCP tools:
+`list_links`, `revoke_link`, `modify_link`.
 
 ## Local debugging
 
 ### Run services in the foreground (see logs live)
 
-Logs are structured JSON to stdout (`apage-agent` uses text). Run one service at
-a time in the foreground and pretty-print with `jq`:
+Logs are structured JSON to stdout (`apage-cli` uses text). Run one service at a
+time in the foreground and pretty-print with `jq`:
 
 ```bash
 set -a; source .env; set +a            # export env into the shell
 go run ./cmd/api      2>&1 | jq .       # or ./bin/apage-api
-go run ./cmd/gateway  2>&1 | jq .
 go run ./cmd/worker   2>&1 | jq .
 ```
 
@@ -110,13 +118,12 @@ VS Code `.vscode/launch.json`:
 # Postgres
 PGPASSWORD=apage psql -h 127.0.0.1 -p 5433 -U apage -d apage
 #   \dt                                   list tables
-#   SELECT instance_id,subdomain,status,last_seen_at FROM agent_instances;
+#   SELECT instance_id,subdomain FROM agent_instances;
 #   SELECT link_id,mode,revoked_at,frozen_at,view_count FROM preview_links ORDER BY created_at DESC LIMIT 10;
 #   SELECT event,actor_type,resource_id,created_at FROM audit_logs ORDER BY created_at DESC LIMIT 20;
 
-# Redis (key prefixes: agent: / view: / rl: / idem: / link: / queue:)
+# Redis (key prefixes: view: / rl: / idem: / link: / queue:)
 redis-cli
-#   KEYS agent:*           online agent -> gateway registry
 #   GET  view:plink_xxx    atomic view counter for maxViews/single_use
 #   LLEN queue:scan        pending scan jobs
 
@@ -128,8 +135,6 @@ redis-cli
 
 ```bash
 curl -s localhost:8080/readyz | jq .      # {"deps":{"db":"ok","redis":"ok"}} — shows which dep is down
-curl -s localhost:8090/metrics            # gateway active connections (Prometheus text)
-curl -s localhost:7676/local/v1/health    # agent loopback API (only when agent is running)
 ```
 
 ### Frontend
@@ -155,8 +160,8 @@ docker compose up -d postgres redis minio
 - **Postgres "password authentication failed"** with the right password: a stale
   `apage_pgdata` volume kept old credentials (`POSTGRES_PASSWORD` only applies on
   first init). Fix: `docker compose rm -sf postgres && docker volume rm apage_pgdata && docker compose up -d postgres`.
-- **Agent "invalid agent token"**: the token must be the `agentToken` returned
-  when the instance was created (shown once). Lost it? Rotate via
+- **apage-cli "unauthorized"**: the `--api-key` must be the `instanceApiKey`
+  returned when the instance was created (shown once). Lost it? Rotate via
   `POST /api/v1/instances/{id}/rotate-credentials`.
 - **`readyz` returns 503**: a dependency is unreachable — the JSON `deps` field
   names which (`db`/`redis`); cloud upload also needs MinIO.
@@ -166,7 +171,7 @@ docker compose up -d postgres redis minio
 ### Race detector & focused tests
 
 ```bash
-go test -race ./...                       # catches data races (gateway sessions, counters)
+go test -race ./...                       # catches data races (view counters, queues)
 go test -run TestResolvePath ./internal/agent -v
 ```
 
@@ -186,3 +191,26 @@ converted or accepted.
 go test ./...        # path traversal, argon2, access policy, expiry, redaction
 cd web && npm run build
 ```
+
+### End-to-end (multi-surface) tests
+
+[`internal/e2e/`](internal/e2e/) wires the **real** servers — `apage-api` and the
+worker — in-process against the live infra and drives the full operator + agent +
+visitor journey, asserting on every surface. They are tagged `e2e` so a plain
+`go test ./...` (no infra) stays green, and they `t.Skip` (not fail) when the
+datastores are unreachable.
+
+```bash
+make test-e2e        # brings infra up, then: go test -tags e2e ./internal/e2e/...
+```
+
+Covered flows: health; register/login/logout + CSRF enforcement; instance
+lifecycle incl. cross-tenant subdomain conflict (409) and lite quota; the cloud
+preview path (instance-API-key upload → worker scan → ready → preview → delete)
+with Range, wrong-secret 404, and revoke 410; access policies (password gate,
+atomic `maxViews` under concurrency, single-use, IP allowlist); abuse
+freeze→410→unfreeze; cross-surface audit trail; MIME-allowlist rejection; and
+that links can only be created via an instance API key (console session → 403).
+
+The browser/web surface (register → console → instance creation, with the quota
+error path) is exercised via the running stack at `http://localhost:3000`.

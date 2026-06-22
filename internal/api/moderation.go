@@ -70,7 +70,7 @@ func (s *Server) handleUnfreezeLink(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{"linkId": linkID, "frozen": false})
 }
 
-// handleFreezeInstance freezes a tenant instance and drops its tunnel (spec §15.5).
+// handleFreezeInstance freezes a tenant instance and its links (spec §15.5).
 func (s *Server) handleFreezeInstance(w http.ResponseWriter, r *http.Request) {
 	au := requireRole(w, r, "admin")
 	if au == nil {
@@ -86,11 +86,8 @@ func (s *Server) handleFreezeInstance(w http.ResponseWriter, r *http.Request) {
 		httpx.NotFound(w, r)
 		return
 	}
-	_ = s.rdb.UnregisterAgent(r.Context(), instanceID) // sever the live tunnel
-	// Teeth: freeze the instance's links so the runtime returns 410 immediately,
-	// even if the agent's in-memory gateway session lingers or reconnects
-	// (security review #1). The gateway also rejects a frozen instance's
-	// reconnect, so the tunnel cannot come back up.
+	// Freeze the instance's links so the runtime returns 410 immediately
+	// (security review #1).
 	_, _ = s.db.FreezeInstanceLinks(r.Context(), au.TenantID, instanceID, instanceFrozenReason)
 	s.invalidateInstanceLinks(r.Context(), instanceID)
 	s.audit(r.Context(), audit.Entry{TenantID: au.TenantID, InstanceID: instanceID,

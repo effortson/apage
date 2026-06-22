@@ -54,10 +54,6 @@ type Config struct {
 	JWTSigningSecret string
 	SessionSecret    string
 
-	// Agent compatibility (spec §6.1, §7)
-	AgentMinProtocolVersion string
-	AgentMinVersion         string
-
 	// Upload thresholds (spec §12)
 	DirectUploadMaxBytes int64
 	PresignURLTTLSeconds int
@@ -89,81 +85,52 @@ type Config struct {
 
 	// Service bind addresses
 	APIAddr     string // :8080
-	GatewayAddr string // :8090
 	MetricsAddr string // :9090
-
-	// Internal URL the API uses to reach the gateway for tunnel streaming
-	// (fallback when the registry has no per-instance gateway URL).
-	GatewayInternalURL string
-	// GatewayInternalSecret authenticates the API -> gateway internal stream
-	// endpoint so it cannot be driven directly even if the agent host exposes it
-	// (spec §19.4). Shared by the API and gateway; required in production.
-	GatewayInternalSecret string
-	// GatewayAdvertiseURL is the URL this gateway publishes to the registry so the
-	// API can route previews to it (multi-gateway). Defaults to GatewayInternalURL.
-	GatewayAdvertiseURL string
-
-	// Gateway session defaults (spec §7)
-	MaxConcurrentStreams int
-	MaxChunkBytes        int
-	IdleTimeoutSeconds   int
 }
 
 // Load reads configuration from the environment, applying defaults where safe.
 func Load() (*Config, error) {
 	c := &Config{
-		Environment:             strings.ToLower(env("APP_ENV", "development")),
-		BaseDomain:              env("APP_BASE_DOMAIN", "preview.localhost"),
-		ConsoleDomain:           env("APP_CONSOLE_DOMAIN", "console.localhost"),
-		RenderDomain:            env("APP_RENDER_DOMAIN", "render.preview.localhost"),
-		CookieDomain:            env("COOKIE_DOMAIN", ""),
-		TrustedProxyCount:       envInt("TRUSTED_PROXY_COUNT", 1),
-		DatabaseURL:             env("DATABASE_URL", "postgres://apage:apage@localhost:5432/apage?sslmode=disable"),
-		RedisURL:                env("REDIS_URL", "redis://localhost:6379/0"),
-		S3Endpoint:              env("S3_ENDPOINT", "http://localhost:9000"),
-		S3PublicEndpoint:        env("S3_PUBLIC_ENDPOINT", ""),
-		S3Bucket:                env("S3_BUCKET", "apage"),
-		S3Region:                env("S3_REGION", "us-east-1"),
-		S3AccessKey:             env("S3_ACCESS_KEY", "minioadmin"),
-		S3SecretKey:             env("S3_SECRET_KEY", "minioadmin"),
-		S3UseSSL:                envBool("S3_USE_SSL", false),
-		S3LifecycleDays:         envInt("S3_LIFECYCLE_DAYS", 0),
-		JWTSigningSecret:        env("JWT_SIGNING_SECRET", "dev-jwt-secret-change-me"),
-		SessionSecret:           env("SESSION_SECRET", "dev-session-secret-change-me"),
-		AgentMinProtocolVersion: env("AGENT_MIN_PROTOCOL_VERSION", "1"),
-		AgentMinVersion:         env("AGENT_MIN_VERSION", "0.1.0"),
-		DirectUploadMaxBytes:    envInt64("DIRECT_UPLOAD_MAX_BYTES", 8*1024*1024),
-		PresignURLTTLSeconds:    envInt("PRESIGN_URL_TTL_SECONDS", 900),
-		SMTPHost:                env("SMTP_HOST", ""),
-		SMTPPort:                envInt("SMTP_PORT", 587),
-		SMTPUser:                env("SMTP_USER", ""),
-		SMTPPass:                env("SMTP_PASS", ""),
-		MailFrom:                env("MAIL_FROM", "no-reply@apage.local"),
-		SafeBrowsingAPIKey:      env("SAFE_BROWSING_API_KEY", ""),
-		AuditRetentionDays:      envInt("AUDIT_RETENTION_DAYS", 90),
-		AdminIPAllowlist:        envList("ADMIN_IP_ALLOWLIST"),
-		AdminBootstrapEmail:     env("ADMIN_BOOTSTRAP_EMAIL", ""),
-		AdminBootstrapPassword:  env("ADMIN_BOOTSTRAP_PASSWORD", ""),
-		OAuthRedirectBase:       env("OAUTH_REDIRECT_BASE", ""),
-		OAuthGitHubClientID:     env("OAUTH_GITHUB_CLIENT_ID", ""),
-		OAuthGitHubSecret:       env("OAUTH_GITHUB_CLIENT_SECRET", ""),
-		OAuthGoogleClientID:     env("OAUTH_GOOGLE_CLIENT_ID", ""),
-		OAuthGoogleSecret:       env("OAUTH_GOOGLE_CLIENT_SECRET", ""),
-		APIAddr:                 env("API_ADDR", ":8080"),
-		GatewayAddr:             env("GATEWAY_ADDR", ":8090"),
-		MetricsAddr:             env("METRICS_ADDR", ":9090"),
-		GatewayInternalURL:      env("GATEWAY_INTERNAL_URL", "http://localhost:8090"),
-		GatewayInternalSecret:   env("GATEWAY_INTERNAL_SECRET", ""),
-		GatewayAdvertiseURL:     env("GATEWAY_ADVERTISE_URL", ""),
-		MaxConcurrentStreams:    envInt("MAX_CONCURRENT_STREAMS", 16),
-		MaxChunkBytes:           envInt("MAX_CHUNK_BYTES", 262144),
-		IdleTimeoutSeconds:      envInt("IDLE_TIMEOUT_SECONDS", 60),
+		Environment:            strings.ToLower(env("APP_ENV", "development")),
+		BaseDomain:             env("APP_BASE_DOMAIN", "preview.localhost"),
+		ConsoleDomain:          env("APP_CONSOLE_DOMAIN", "console.localhost"),
+		RenderDomain:           env("APP_RENDER_DOMAIN", "render.preview.localhost"),
+		CookieDomain:           env("COOKIE_DOMAIN", ""),
+		TrustedProxyCount:      envInt("TRUSTED_PROXY_COUNT", 1),
+		DatabaseURL:            env("DATABASE_URL", "postgres://apage:apage@localhost:5432/apage?sslmode=disable"),
+		RedisURL:               env("REDIS_URL", "redis://localhost:6379/0"),
+		S3Endpoint:             env("S3_ENDPOINT", "http://localhost:9000"),
+		S3PublicEndpoint:       env("S3_PUBLIC_ENDPOINT", ""),
+		S3Bucket:               env("S3_BUCKET", "apage"),
+		S3Region:               env("S3_REGION", "us-east-1"),
+		S3AccessKey:            env("S3_ACCESS_KEY", "minioadmin"),
+		S3SecretKey:            env("S3_SECRET_KEY", "minioadmin"),
+		S3UseSSL:               envBool("S3_USE_SSL", false),
+		S3LifecycleDays:        envInt("S3_LIFECYCLE_DAYS", 0),
+		JWTSigningSecret:       env("JWT_SIGNING_SECRET", "dev-jwt-secret-change-me"),
+		SessionSecret:          env("SESSION_SECRET", "dev-session-secret-change-me"),
+		DirectUploadMaxBytes:   envInt64("DIRECT_UPLOAD_MAX_BYTES", 8*1024*1024),
+		PresignURLTTLSeconds:   envInt("PRESIGN_URL_TTL_SECONDS", 900),
+		SMTPHost:               env("SMTP_HOST", ""),
+		SMTPPort:               envInt("SMTP_PORT", 587),
+		SMTPUser:               env("SMTP_USER", ""),
+		SMTPPass:               env("SMTP_PASS", ""),
+		MailFrom:               env("MAIL_FROM", "no-reply@apage.local"),
+		SafeBrowsingAPIKey:     env("SAFE_BROWSING_API_KEY", ""),
+		AuditRetentionDays:     envInt("AUDIT_RETENTION_DAYS", 90),
+		AdminIPAllowlist:       envList("ADMIN_IP_ALLOWLIST"),
+		AdminBootstrapEmail:    env("ADMIN_BOOTSTRAP_EMAIL", ""),
+		AdminBootstrapPassword: env("ADMIN_BOOTSTRAP_PASSWORD", ""),
+		OAuthRedirectBase:      env("OAUTH_REDIRECT_BASE", ""),
+		OAuthGitHubClientID:    env("OAUTH_GITHUB_CLIENT_ID", ""),
+		OAuthGitHubSecret:      env("OAUTH_GITHUB_CLIENT_SECRET", ""),
+		OAuthGoogleClientID:    env("OAUTH_GOOGLE_CLIENT_ID", ""),
+		OAuthGoogleSecret:      env("OAUTH_GOOGLE_CLIENT_SECRET", ""),
+		APIAddr:                env("API_ADDR", ":8080"),
+		MetricsAddr:            env("METRICS_ADDR", ":9090"),
 	}
 	if c.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
-	}
-	if c.GatewayAdvertiseURL == "" {
-		c.GatewayAdvertiseURL = c.GatewayInternalURL
 	}
 	if c.OAuthRedirectBase == "" {
 		c.OAuthRedirectBase = "https://" + c.ConsoleDomain
@@ -187,15 +154,14 @@ func (c *Config) IsProduction() bool {
 // insecureDefaults are the dev placeholder secrets that must never reach prod.
 // Empty also counts: these values are always required in production.
 var insecureDefaults = map[string]bool{
-	"dev-jwt-secret-change-me":      true,
-	"dev-session-secret-change-me":  true,
-	"dev-internal-secret-change-me": true,
-	"":                              true,
+	"dev-jwt-secret-change-me":     true,
+	"dev-session-secret-change-me": true,
+	"":                             true,
 }
 
 // Validate refuses to boot in production with default/empty secrets so a
-// misconfigured deploy cannot ship forgeable session/grant tokens or an
-// unauthenticated gateway stream endpoint (security review #4/#3).
+// misconfigured deploy cannot ship forgeable session/grant tokens or use the
+// known-dangerous default object-storage credentials (security review #4/#3).
 func (c *Config) Validate() error {
 	if !c.IsProduction() {
 		return nil
@@ -207,11 +173,8 @@ func (c *Config) Validate() error {
 	if insecureDefaults[c.JWTSigningSecret] {
 		bad = append(bad, "JWT_SIGNING_SECRET")
 	}
-	if insecureDefaults[c.GatewayInternalSecret] {
-		bad = append(bad, "GATEWAY_INTERNAL_SECRET")
-	}
-	// S3 is optional (tunnel-only deploys need no cloud storage), so only the
-	// known-dangerous "minioadmin" default is rejected — empty is allowed.
+	// Object storage is required in cloud-only mode, so the known-dangerous
+	// "minioadmin" default is rejected in production.
 	if c.S3AccessKey == "minioadmin" || c.S3SecretKey == "minioadmin" {
 		bad = append(bad, "S3_ACCESS_KEY/S3_SECRET_KEY")
 	}

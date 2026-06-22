@@ -22,7 +22,6 @@ type Server struct {
 	rdb   *redisx.Client
 	log   *slog.Logger
 	mail  Mailer
-	gw    GatewayClient
 	store ObjectStore
 
 	previewAccessTotal int64 // atomic counter for /metrics (spec §18)
@@ -31,14 +30,6 @@ type Server struct {
 // Mailer sends transactional email (verification, invites, resets).
 type Mailer interface {
 	Send(to, subject, body string) error
-}
-
-// GatewayClient streams a tunnel file via the gateway's internal endpoint.
-type GatewayClient interface {
-	// StreamFile asks the gateway at gatewayURL (resolved from the registry) to
-	// stream fileRef to w, honoring the Range header. An empty gatewayURL uses the
-	// client's configured fallback. Returns the upstream status.
-	StreamFile(w http.ResponseWriter, r *http.Request, gatewayURL, instanceID, fileRef string) error
 }
 
 // ObjectStore abstracts cloud object storage (spec §11).
@@ -52,8 +43,8 @@ type ObjectStore interface {
 }
 
 // New constructs a Server.
-func New(cfg *config.Config, db *store.Store, rdb *redisx.Client, log *slog.Logger, mail Mailer, gw GatewayClient, obj ObjectStore) *Server {
-	return &Server{cfg: cfg, db: db, rdb: rdb, log: log, mail: mail, gw: gw, store: obj}
+func New(cfg *config.Config, db *store.Store, rdb *redisx.Client, log *slog.Logger, mail Mailer, obj ObjectStore) *Server {
+	return &Server{cfg: cfg, db: db, rdb: rdb, log: log, mail: mail, store: obj}
 }
 
 // Router builds the full HTTP routing tree.
@@ -103,8 +94,6 @@ func (s *Server) Router() http.Handler {
 			r.Get("/instances/{id}", s.handleGetInstance)
 			r.Delete("/instances/{id}", s.handleDeleteInstance)
 			r.Post("/instances/{id}/rotate-credentials", s.handleRotateCredentials)
-			r.Post("/instances/{id}/revoke-token", s.handleRevokeToken)
-			r.Post("/instances/{id}/allowlist-change-request", s.handleAllowlistChange)
 			r.Post("/instances/{id}/freeze", s.handleFreezeInstance)
 			r.Post("/instances/{id}/unfreeze", s.handleUnfreezeInstance)
 
@@ -144,6 +133,7 @@ func (s *Server) Router() http.Handler {
 			r.Use(s.csrfGuard)          // session callers need CSRF; bearer callers bypass
 			r.Use(s.dataWriteRateLimit) // per-tenant write throttle (spec §19.6)
 			r.Post("/preview-links", s.handleCreateLink)
+			r.Patch("/preview-links/{id}", s.handleUpdateLink)
 			r.Get("/preview-links", s.handleListLinks)
 			r.Post("/preview-links/{id}/revoke", s.handleRevokeLink)
 			r.Post("/files", s.handleUploadFile)

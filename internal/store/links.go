@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const linkSelect = `SELECT link_id,tenant_id,COALESCE(instance_id,''),file_ref,file_id,mode,
+const linkSelect = `SELECT link_id,tenant_id,COALESCE(instance_id,''),file_id,mode,
 	COALESCE(display_name,''),secret_hash,access_policy,expires_at,revoked_at,frozen_at,
 	COALESCE(frozen_reason,''),last_accessed_at,view_count,created_at FROM preview_links`
 
@@ -21,7 +21,7 @@ type linkRow struct {
 
 func scanLink(row pgx.Row) (*linkRow, error) {
 	var l linkRow
-	err := row.Scan(&l.LinkID, &l.TenantID, &l.InstanceID, &l.FileRef, &l.FileID, &l.Mode,
+	err := row.Scan(&l.LinkID, &l.TenantID, &l.InstanceID, &l.FileID, &l.Mode,
 		&l.DisplayName, &l.SecretHash, &l.AccessPolicy, &l.ExpiresAt, &l.RevokedAt, &l.FrozenAt,
 		&l.FrozenReason, &l.LastAccessedAt, &l.ViewCount, &l.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -33,11 +33,58 @@ func scanLink(row pgx.Row) (*linkRow, error) {
 // CreateLink inserts a preview link.
 func (s *Store) CreateLink(ctx context.Context, l PreviewLink, secretHash string) error {
 	_, err := s.Pool.Exec(ctx,
-		`INSERT INTO preview_links(link_id,tenant_id,instance_id,file_ref,file_id,mode,display_name,
-			secret_hash,access_policy,expires_at) VALUES($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8,$9,$10)`,
-		l.LinkID, l.TenantID, l.InstanceID, l.FileRef, l.FileID, l.Mode, l.DisplayName,
+		`INSERT INTO preview_links(link_id,tenant_id,instance_id,file_id,mode,display_name,
+			secret_hash,access_policy,expires_at) VALUES($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8,$9)`,
+		l.LinkID, l.TenantID, l.InstanceID, l.FileID, l.Mode, l.DisplayName,
 		secretHash, l.AccessPolicy, l.ExpiresAt)
 	return err
+}
+
+// LinkUpdate carries the optional fields an agent may change on an existing
+// link via modify_link (spec: agent-driven link management). A nil field is left
+// unchanged; FileID swaps the backing cloud file (keeps the same URL/secret).
+type LinkUpdate struct {
+	FileID       *string
+	DisplayName  *string
+	AccessPolicy []byte
+	ExpiresAt    *time.Time
+}
+
+// UpdateLink applies a partial update to a tenant's link, leaving the secret and
+// link id intact so the public URL keeps working. Returns ErrNotFound when no
+// matching, non-revoked link exists.
+func (s *Store) UpdateLink(ctx context.Context, tenantID, linkID string, u LinkUpdate) error {
+	sets := []string{}
+	args := []any{linkID, tenantID}
+	if u.FileID != nil {
+		args = append(args, *u.FileID)
+		sets = append(sets, `file_id=$`+itoa(len(args)))
+	}
+	if u.DisplayName != nil {
+		args = append(args, *u.DisplayName)
+		sets = append(sets, `display_name=$`+itoa(len(args)))
+	}
+	if u.AccessPolicy != nil {
+		args = append(args, u.AccessPolicy)
+		sets = append(sets, `access_policy=$`+itoa(len(args)))
+	}
+	if u.ExpiresAt != nil {
+		args = append(args, *u.ExpiresAt)
+		sets = append(sets, `expires_at=$`+itoa(len(args)))
+	}
+	if len(sets) == 0 {
+		return nil // nothing to change
+	}
+	q := `UPDATE preview_links SET ` + join(sets, ", ") +
+		` WHERE link_id=$1 AND tenant_id=$2 AND revoked_at IS NULL`
+	tag, err := s.Pool.Exec(ctx, q, args...)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // LinkByID loads a link with its secret hash (runtime access path).

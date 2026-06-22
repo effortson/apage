@@ -15,23 +15,23 @@ import (
 
 type createLinkReq struct {
 	Mode             string          `json:"mode"`
-	InstanceID       string          `json:"instanceId"` // required for tunnel via console session
-	FileRef          string          `json:"fileRef"`
 	FileID           string          `json:"fileId"`
 	ExpiresInSeconds int64           `json:"expiresInSeconds"`
 	DisplayName      string          `json:"displayName"`
 	AccessPolicy     json.RawMessage `json:"accessPolicy"`
 	Password         string          `json:"password"` // plaintext, hashed before storage
-	// Tunnel metadata (spec §6.4/§16): the platform receives only fileRef +
-	// metadata from the local agent registration, never the raw path.
-	Size     int64  `json:"size"`
-	MimeType string `json:"mimeType"`
 }
 
-// handleCreateLink creates a tunnel or cloud preview link (spec §8/§12).
+// handleCreateLink creates a cloud preview link (spec §8/§12). Links are created
+// only by an agent authenticating with an instance api key — console sessions
+// cannot create links (they manage/revoke via the console).
 func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) {
 	sc := scopeRole(w, r, "member")
 	if sc == nil {
+		return
+	}
+	if !sc.ViaKey || sc.Instance == nil {
+		httpx.Forbidden(w, r, "preview links are created by the agent via its instance API key (MCP)")
 		return
 	}
 	var req createLinkReq
@@ -39,28 +39,18 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) {
 		httpx.BadRequest(w, r, "invalid body")
 		return
 	}
-	if req.Mode != "tunnel" && req.Mode != "cloud" {
-		httpx.BadRequest(w, r, "mode must be tunnel|cloud")
+	if req.Mode == "" {
+		req.Mode = "cloud"
+	}
+	if req.Mode != "cloud" {
+		httpx.BadRequest(w, r, "mode must be cloud")
 		return
 	}
 	if req.ExpiresInSeconds <= 0 {
 		req.ExpiresInSeconds = 3600
 	}
-	// Resolve the operating instance: instance-key scope uses its own; a console
-	// session must name instanceId and it must belong to the tenant.
+	// The agent's instance-key scope names the operating instance.
 	in := sc.Instance
-	if in == nil && req.InstanceID != "" {
-		got, err := s.db.InstanceByID(r.Context(), req.InstanceID)
-		if err != nil || got.TenantID != sc.TenantID {
-			httpx.NotFound(w, r)
-			return
-		}
-		in = got
-	}
-	if req.Mode == "tunnel" && in == nil {
-		httpx.BadRequest(w, r, "instanceId required for tunnel mode")
-		return
-	}
 	if in != nil && in.FrozenAt != nil {
 		httpx.Forbidden(w, r, "instance is frozen")
 		return
@@ -101,56 +91,24 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) {
 		}
 		var backingExpiry *time.Time
 
-		switch req.Mode {
-		case "tunnel":
-			if req.FileRef == "" {
-				return badReq(r, "fileRef required for tunnel mode")
-			}
-			fr, err := s.db.FileRefByID(r.Context(), req.FileRef)
-			if err != nil {
-				// Not yet registered: upsert metadata supplied by the tool from
-				// the local agent registration (spec §6.4/§16). Path is never sent.
-				if req.DisplayName == "" {
-					return badReq(r, "displayName required to register a new fileRef")
-				}
-				fr = &store.FileRef{
-					FileRef: req.FileRef, InstanceID: instanceID, DisplayName: req.DisplayName,
-					Size: req.Size, MimeType: req.MimeType,
-				}
-				if e := s.db.UpsertFileRef(r.Context(), *fr); e != nil {
-					return 500, internalBody(r)
-				}
-				s.audit(r.Context(), audit.Entry{TenantID: sc.TenantID, InstanceID: instanceID,
-					Event: audit.FileRegistered, ActorType: actorOf(sc), ActorID: actorID(sc),
-					ResourceType: "file_ref", ResourceID: req.FileRef})
-			} else if fr.InstanceID != instanceID {
-				return notFound(r) // cross-instance fileRef is invisible (spec §File Ref)
-			}
-			link.FileRef = &fr.FileRef
-			if link.DisplayName == "" {
-				link.DisplayName = fr.DisplayName
-			}
-			backingExpiry = fr.ExpiresAt
-		case "cloud":
-			if req.FileID == "" {
-				return badReq(r, "fileId required for cloud mode")
-			}
-			f, err := s.db.FileByID(r.Context(), sc.TenantID, req.FileID)
-			if err != nil {
-				return notFound(r)
-			}
-			if f.Status != "ready" {
-				return conflict(r, "file not ready (status="+f.Status+"); only ready files can back a cloud link")
-			}
-			link.FileID = &f.FileID
-			if link.DisplayName == "" {
-				link.DisplayName = f.DisplayName
-			}
-			if link.InstanceID == "" {
-				link.InstanceID = f.InstanceID // cloud link inherits the uploading instance's subdomain
-			}
-			backingExpiry = f.ExpiresAt
+		if req.FileID == "" {
+			return badReq(r, "fileId required")
 		}
+		f, err := s.db.FileByID(r.Context(), sc.TenantID, req.FileID)
+		if err != nil {
+			return notFound(r)
+		}
+		if f.Status != "ready" {
+			return conflict(r, "file not ready (status="+f.Status+"); only ready files can back a cloud link")
+		}
+		link.FileID = &f.FileID
+		if link.DisplayName == "" {
+			link.DisplayName = f.DisplayName
+		}
+		if link.InstanceID == "" {
+			link.InstanceID = f.InstanceID // cloud link inherits the uploading instance's subdomain
+		}
+		backingExpiry = f.ExpiresAt
 
 		// Clamp to backing's remaining lifetime (spec §11).
 		eff := effectiveExpiry(&linkExpiry, backingExpiry)
@@ -198,6 +156,104 @@ func (s *Server) handleCreateLink(w http.ResponseWriter, r *http.Request) {
 			"expiresAt": link.ExpiresAt,
 		}
 	})
+}
+
+type updateLinkReq struct {
+	FileID           *string         `json:"fileId"`
+	DisplayName      *string         `json:"displayName"`
+	ExpiresInSeconds *int64          `json:"expiresInSeconds"`
+	AccessPolicy     json.RawMessage `json:"accessPolicy"`
+	Password         *string         `json:"password"`
+}
+
+// handleUpdateLink modifies an existing link in place (modify_link): swap the
+// backing cloud file and/or change display name, access policy/password, and
+// expiry. The link id + secret are preserved so the public URL keeps working.
+// Agent-only (instance API key); console sessions manage links read-only.
+func (s *Server) handleUpdateLink(w http.ResponseWriter, r *http.Request) {
+	sc := scopeRole(w, r, "member")
+	if sc == nil {
+		return
+	}
+	if !sc.ViaKey || sc.Instance == nil {
+		httpx.Forbidden(w, r, "preview links are managed by the agent via its instance API key (MCP)")
+		return
+	}
+	linkID := chi.URLParam(r, "id")
+	var req updateLinkReq
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.BadRequest(w, r, "invalid body")
+		return
+	}
+
+	var upd store.LinkUpdate
+	var backingExpiry *time.Time
+	if req.FileID != nil {
+		f, err := s.db.FileByID(r.Context(), sc.TenantID, *req.FileID)
+		if err != nil {
+			httpx.NotFound(w, r)
+			return
+		}
+		if f.Status != "ready" {
+			httpx.Conflict(w, r, "file not ready (status="+f.Status+"); only ready files can back a cloud link")
+			return
+		}
+		upd.FileID = &f.FileID
+		backingExpiry = f.ExpiresAt
+	}
+	if req.DisplayName != nil {
+		upd.DisplayName = req.DisplayName
+	}
+	// Rebuild the stored access policy when a policy or password is supplied.
+	if req.AccessPolicy != nil || req.Password != nil {
+		pol := parsePolicy(req.AccessPolicy)
+		pw := ""
+		if req.Password != nil {
+			pw = *req.Password
+		}
+		if pw != "" {
+			ph, err := hash.Password(pw)
+			if err != nil {
+				httpx.Internal(w, r)
+				return
+			}
+			pol.Type = "password"
+			pol.Password = &struct {
+				Enabled      bool   `json:"enabled"`
+				Hash         string `json:"-"`
+				AttemptLimit int    `json:"attemptLimit"`
+			}{Enabled: true, Hash: ph, AttemptLimit: 5}
+		}
+		upd.AccessPolicy = marshalPolicyForStorage(pol, pw)
+	}
+	if req.ExpiresInSeconds != nil && *req.ExpiresInSeconds > 0 {
+		plan := "lite"
+		if t, err := s.db.TenantByID(r.Context(), sc.TenantID); err == nil {
+			plan = t.Plan
+		}
+		exp := time.Now().Add(time.Duration(*req.ExpiresInSeconds) * time.Second)
+		if max := planMaxLinkTTL(plan); max > 0 {
+			if cap := time.Now().Add(max); exp.After(cap) {
+				exp = cap
+			}
+		}
+		upd.ExpiresAt = effectiveExpiry(&exp, backingExpiry)
+	}
+
+	if err := s.db.UpdateLink(r.Context(), sc.TenantID, linkID, upd); err != nil {
+		if err == store.ErrNotFound {
+			httpx.NotFound(w, r)
+			return
+		}
+		httpx.Internal(w, r)
+		return
+	}
+	// Invalidate cache so the swapped content/policy takes effect <=5s (spec §19.7).
+	_ = s.rdb.InvalidateLink(r.Context(), linkID)
+	s.audit(r.Context(), audit.Entry{TenantID: sc.TenantID, InstanceID: sc.Instance.InstanceID,
+		Event: audit.PreviewLinkUpdated, ActorType: actorOf(sc), ActorID: actorID(sc),
+		ResourceType: "preview_link", ResourceID: linkID, IP: httpx.ClientIP(r.Context())})
+	httpx.JSON(w, http.StatusOK, map[string]any{"linkId": linkID, "updated": true})
 }
 
 // planMaxLinkTTL is the maximum link lifetime allowed by a plan; 0 means no cap

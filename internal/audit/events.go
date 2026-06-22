@@ -17,6 +17,7 @@ const (
 	PreviewLinkAccessed  = "preview_link.accessed"
 	PreviewLinkDenied    = "preview_link.denied"
 	PreviewLinkRevoked   = "preview_link.revoked"
+	PreviewLinkUpdated   = "preview_link.updated"
 	FileExpired          = "file.expired"
 	FileDeleted          = "file.deleted"
 	CustomDomainVerified = "custom_domain.verified"

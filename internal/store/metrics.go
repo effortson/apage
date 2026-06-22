@@ -2,11 +2,11 @@ package store
 
 import "context"
 
-// CountOnlineInstances returns the number of agent instances currently online
-// across all tenants (observability, spec §18).
-func (s *Store) CountOnlineInstances(ctx context.Context) (int, error) {
+// CountInstances returns the total number of agent instances across all tenants
+// (observability, spec §18). Cloud-only instances have no live-connection state.
+func (s *Store) CountInstances(ctx context.Context) (int, error) {
 	var n int
-	err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM agent_instances WHERE status='online'`).Scan(&n)
+	err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM agent_instances`).Scan(&n)
 	return n, err
 }
 

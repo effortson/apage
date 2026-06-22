@@ -1,4 +1,4 @@
-# APAGE edge proxy (spec §22.2): TLS + wildcard routing + WebSocket.
+# APAGE edge proxy (spec §22.2): TLS + wildcard routing (cloud-only).
 # Local dev uses internal TLS; production uses ACME for the base + render domains.
 
 {
@@ -22,17 +22,6 @@ admin.localhost {
 	reverse_proxy api:8080 {
 		header_up X-Forwarded-For {remote_host}
 	}
-}
-
-# Agent tunnel endpoint (WebSocket upgrade) — routed to the gateway.
-# In production this is a dedicated agent LB (spec §19.2). Only the public agent
-# routes are exposed; the API->gateway internal stream and metrics must NOT be
-# reachable from here. The internal stream additionally requires
-# GATEWAY_INTERNAL_SECRET (security review #3), but keep it off the public host.
-gw.localhost {
-	@internal path /internal/* /metrics
-	respond @internal 404
-	reverse_proxy gateway:8090
 }
 
 # Wildcard preview subdomains: *.preview.localhost -> API runtime endpoints.
