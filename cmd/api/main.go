@@ -64,7 +64,7 @@ func main() {
 		mailer = mail.LogMailer{Log: log}
 	}
 
-	gw := gatewayclient.New(cfg.GatewayInternalURL)
+	gw := gatewayclient.New(cfg.GatewayInternalURL, cfg.GatewayInternalSecret)
 
 	var objIface api.ObjectStore
 	if obj != nil {

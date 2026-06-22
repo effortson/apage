@@ -59,7 +59,7 @@ func New(cfg *config.Config, db *store.Store, rdb *redisx.Client, log *slog.Logg
 // Router builds the full HTTP routing tree.
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
-	r.Use(httpx.RequestContext(true)) // behind our edge: trust X-Forwarded-For
+	r.Use(httpx.RequestContext(s.cfg.TrustedProxyCount)) // trust only edge-appended XFF hops
 	r.Use(httpx.Recover(s.log))
 	r.Use(httpx.Logger(s.log))
 

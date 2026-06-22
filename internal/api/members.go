@@ -86,12 +86,20 @@ func (s *Server) handleAcceptInvite(w http.ResponseWriter, r *http.Request) {
 		httpx.Unauthorized(w, r, "invalid session")
 		return
 	}
+	u, err := s.db.UserByID(r.Context(), userID)
+	if err != nil {
+		httpx.Unauthorized(w, r, "user gone")
+		return
+	}
 	var req acceptReq
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid body")
 		return
 	}
-	row, err := s.db.ConsumeAuthToken(r.Context(), hash.SecretHash(req.Token), "invite")
+	// Bind the invite to the address it was sent to: consume only if the token's
+	// email matches the accepting user (security review #8). A mismatch leaves
+	// the token intact and is indistinguishable from an invalid token.
+	row, err := s.db.ConsumeInviteToken(r.Context(), hash.SecretHash(req.Token), u.Email)
 	if err != nil {
 		httpx.BadRequest(w, r, "invalid or expired invite")
 		return
@@ -125,6 +133,11 @@ func (s *Server) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
 		httpx.NotFound(w, r)
 		return
 	}
+	// Only an owner may act on an owner account (security review #7).
+	if m.Role == "owner" && au.Role != "owner" {
+		httpx.Forbidden(w, r, "only an owner can modify an owner")
+		return
+	}
 	if m.Role == "owner" && req.Role != "owner" {
 		if n, _ := s.db.CountOwners(r.Context(), au.TenantID); n <= 1 {
 			httpx.Conflict(w, r, "cannot demote the last owner")
@@ -153,6 +166,11 @@ func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 	m, err := s.db.MembershipByID(r.Context(), chi.URLParam(r, "membershipId"))
 	if err != nil || m.TenantID != au.TenantID {
 		httpx.NotFound(w, r)
+		return
+	}
+	// Only an owner may remove an owner account (security review #7).
+	if m.Role == "owner" && au.Role != "owner" {
+		httpx.Forbidden(w, r, "only an owner can remove an owner")
 		return
 	}
 	if m.Role == "owner" {

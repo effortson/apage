@@ -269,6 +269,13 @@ func (s *Store) DeleteSession(ctx context.Context, sessionID string) error {
 	return err
 }
 
+// DeleteSessionsForUser revokes all of a user's sessions (password reset, so a
+// pre-existing attacker session does not survive recovery — security review #5).
+func (s *Store) DeleteSessionsForUser(ctx context.Context, userID string) error {
+	_, err := s.Pool.Exec(ctx, `DELETE FROM sessions WHERE user_id=$1`, userID)
+	return err
+}
+
 // --- Auth tokens (verify email / reset / invite) ---
 
 // CreateAuthToken stores a hashed auth token.
@@ -296,6 +303,23 @@ func (s *Store) ConsumeAuthToken(ctx context.Context, tokenHash, purpose string)
 		`DELETE FROM auth_tokens WHERE token_hash=$1 AND purpose=$2 AND expires_at>now()
 		 RETURNING COALESCE(user_id,''),COALESCE(tenant_id,''),purpose,COALESCE(email,''),COALESCE(role,'')`,
 		tokenHash, purpose).Scan(&r.UserID, &r.TenantID, &r.Purpose, &r.Email, &r.Role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &r, err
+}
+
+// ConsumeInviteToken consumes an invite token only when its target email matches
+// the accepting user's email, so a leaked invite cannot be redeemed by a
+// different account (security review #8). A mismatch leaves the token intact
+// (no row deleted), returning ErrNotFound.
+func (s *Store) ConsumeInviteToken(ctx context.Context, tokenHash, userEmail string) (*AuthTokenRow, error) {
+	var r AuthTokenRow
+	err := s.Pool.QueryRow(ctx,
+		`DELETE FROM auth_tokens WHERE token_hash=$1 AND purpose='invite' AND expires_at>now()
+		   AND (email IS NULL OR lower(email)=lower($2))
+		 RETURNING COALESCE(user_id,''),COALESCE(tenant_id,''),purpose,COALESCE(email,''),COALESCE(role,'')`,
+		tokenHash, userEmail).Scan(&r.UserID, &r.TenantID, &r.Purpose, &r.Email, &r.Role)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}

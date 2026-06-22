@@ -13,13 +13,16 @@ import (
 // Client forwards stream requests to a gateway's internal endpoint.
 type Client struct {
 	baseURL string
+	secret  string // shared secret for the gateway internal endpoint (spec §19.4)
 	http    *http.Client
 }
 
-// New builds a gateway client.
-func New(baseURL string) *Client {
+// New builds a gateway client. secret authenticates the internal stream
+// endpoint (security review #3); empty in dev/single-box.
+func New(baseURL, secret string) *Client {
 	return &Client{
 		baseURL: baseURL,
+		secret:  secret,
 		http:    &http.Client{Timeout: 0}, // streaming: no overall timeout
 	}
 }
@@ -42,6 +45,9 @@ func (c *Client) StreamFile(w http.ResponseWriter, r *http.Request, gatewayURL, 
 	}
 	if rng := r.Header.Get("Range"); rng != "" {
 		req.Header.Set("Range", rng)
+	}
+	if c.secret != "" {
+		req.Header.Set("X-Apage-Internal", c.secret)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {

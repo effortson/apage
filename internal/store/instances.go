@@ -160,3 +160,42 @@ func (s *Store) UnfreezeInstance(ctx context.Context, tenantID, instanceID strin
 		 WHERE instance_id=$1 AND tenant_id=$2 AND frozen_at IS NOT NULL`, instanceID, tenantID)
 	return tag.RowsAffected() > 0, err
 }
+
+// FreezeInstanceLinks freezes all of an instance's live links so an instance
+// freeze takes immediate effect via the existing frozen_at runtime gate. The
+// reason tags these so unfreezing only lifts the instance-induced freeze and
+// leaves independent abuse freezes intact (security review #1).
+func (s *Store) FreezeInstanceLinks(ctx context.Context, tenantID, instanceID, reason string) (int64, error) {
+	tag, err := s.Pool.Exec(ctx,
+		`UPDATE preview_links SET frozen_at=now(), frozen_reason=$3
+		 WHERE tenant_id=$1 AND instance_id=$2 AND frozen_at IS NULL`,
+		tenantID, instanceID, reason)
+	return tag.RowsAffected(), err
+}
+
+// UnfreezeInstanceLinks lifts only the instance-induced link freeze.
+func (s *Store) UnfreezeInstanceLinks(ctx context.Context, tenantID, instanceID, reason string) (int64, error) {
+	tag, err := s.Pool.Exec(ctx,
+		`UPDATE preview_links SET frozen_at=NULL, frozen_reason=NULL
+		 WHERE tenant_id=$1 AND instance_id=$2 AND frozen_at IS NOT NULL AND frozen_reason=$3`,
+		tenantID, instanceID, reason)
+	return tag.RowsAffected(), err
+}
+
+// InstanceLinkIDs returns an instance's link ids (for cache invalidation).
+func (s *Store) InstanceLinkIDs(ctx context.Context, instanceID string) ([]string, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT link_id FROM preview_links WHERE instance_id=$1`, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}

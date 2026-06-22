@@ -6,9 +6,13 @@
 	local_certs
 }
 
-# Console + marketing + control-plane API.
+# Console + marketing + control-plane API. Overwrite X-Forwarded-For with the
+# real peer (one trusted hop) so per-IP rate limits on /api/v1/auth/* cannot be
+# spoofed by a client-supplied leftmost XFF value (security review #2).
 console.localhost, localhost {
-	reverse_proxy api:8080
+	reverse_proxy api:8080 {
+		header_up X-Forwarded-For {remote_host}
+	}
 }
 
 # Platform admin plane (spec §8) — separate host. Forward the real client IP so
@@ -21,8 +25,13 @@ admin.localhost {
 }
 
 # Agent tunnel endpoint (WebSocket upgrade) — routed to the gateway.
-# In production this is a dedicated agent LB (spec §19.2).
+# In production this is a dedicated agent LB (spec §19.2). Only the public agent
+# routes are exposed; the API->gateway internal stream and metrics must NOT be
+# reachable from here. The internal stream additionally requires
+# GATEWAY_INTERNAL_SECRET (security review #3), but keep it off the public host.
 gw.localhost {
+	@internal path /internal/* /metrics
+	respond @internal 404
 	reverse_proxy gateway:8090
 }
 

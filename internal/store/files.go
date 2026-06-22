@@ -137,7 +137,7 @@ func (s *Store) MarkFileDeleted(ctx context.Context, tenantID, fileID string) (*
 // ExpireDueFiles flips files past their expiry to expired (worker, spec §11).
 func (s *Store) ExpireDueFiles(ctx context.Context, now time.Time) ([]File, error) {
 	rows, err := s.Pool.Query(ctx,
-		fileSelect+` WHERE expires_at IS NOT NULL AND expires_at<=$1 AND status NOT IN('expired','deleted')`, now)
+		fileSelect+` WHERE expires_at IS NOT NULL AND expires_at<=$1 AND status NOT IN('expired','deleted','rejected')`, now)
 	if err != nil {
 		return nil, err
 	}

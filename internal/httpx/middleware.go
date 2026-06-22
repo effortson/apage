@@ -36,15 +36,16 @@ func ClientIP(ctx context.Context) string {
 }
 
 // RequestContext assigns a request id and resolves the trusted client IP.
-// trustForwarded should be true only when the service sits behind our own edge.
-func RequestContext(trustForwarded bool) func(http.Handler) http.Handler {
+// trustedProxyCount is the number of trusted reverse proxies in front of the
+// service; 0 means do not trust X-Forwarded-For at all.
+func RequestContext(trustedProxyCount int) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			rid := r.Header.Get("X-Request-Id")
 			if rid == "" {
 				rid = id.New(id.PrefixRequest)
 			}
-			ip := clientIP(r, trustForwarded)
+			ip := clientIP(r, trustedProxyCount)
 			ctx := context.WithValue(r.Context(), ctxRequestID, rid)
 			ctx = context.WithValue(ctx, ctxClientIP, ip)
 			w.Header().Set("X-Request-Id", rid)
@@ -53,18 +54,34 @@ func RequestContext(trustForwarded bool) func(http.Handler) http.Handler {
 	}
 }
 
-func clientIP(r *http.Request, trustForwarded bool) string {
-	if trustForwarded {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			parts := strings.Split(xff, ",")
-			return strings.TrimSpace(parts[0])
-		}
+// clientIP resolves the real client IP. With N trusted proxies, the client IP
+// is the entry N hops from the right of X-Forwarded-For (our own edge appends
+// the true peer there). A client-spoofed value sits to the left and is ignored.
+// Falls back to RemoteAddr when X-Forwarded-For is absent or too short to trust.
+func clientIP(r *http.Request, trustedProxyCount int) string {
+	remote := r.RemoteAddr
+	if i := strings.LastIndex(remote, ":"); i > 0 {
+		remote = remote[:i]
 	}
-	host := r.RemoteAddr
-	if i := strings.LastIndex(host, ":"); i > 0 {
-		host = host[:i]
+	remote = strings.Trim(remote, "[]") // strip IPv6 brackets
+	if trustedProxyCount <= 0 {
+		return remote
 	}
-	return host
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff == "" {
+		return remote
+	}
+	parts := strings.Split(xff, ",")
+	idx := len(parts) - trustedProxyCount
+	if idx < 0 || idx >= len(parts) {
+		// Fewer hops than expected: the request didn't traverse our full proxy
+		// chain, so the header is untrustworthy — use the direct peer.
+		return remote
+	}
+	if v := strings.TrimSpace(parts[idx]); v != "" {
+		return v
+	}
+	return remote
 }
 
 // Logger logs each request with method, path, status, and duration.

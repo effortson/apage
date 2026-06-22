@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"strconv"
 	"time"
@@ -10,9 +11,17 @@ import (
 	"github.com/apage/apage/internal/tunnel"
 )
 
+// internalAuthHeader carries the API<->gateway shared secret (spec §19.4).
+const internalAuthHeader = "X-Apage-Internal"
+
 // handleInternalStream pulls a tunnel file from the agent and relays it to the
-// caller (the API). Only reachable on the internal network (spec §19.4).
+// caller (the API). Authenticated by a shared secret so it cannot be driven
+// directly even if the agent host exposes it (security review #3).
 func (s *Server) handleInternalStream(w http.ResponseWriter, r *http.Request) {
+	if !s.internalAuthorized(r) {
+		httpx.NotFound(w, r) // do not reveal the internal endpoint to outsiders
+		return
+	}
 	instanceID := r.URL.Query().Get("instance")
 	fileRef := r.URL.Query().Get("fileRef")
 	if instanceID == "" || fileRef == "" {
@@ -113,6 +122,18 @@ func (s *Server) handleInternalStream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// internalAuthorized validates the shared secret on the internal stream
+// endpoint. When no secret is configured (dev/single-box) the check is skipped;
+// config.Validate() requires the secret in production.
+func (s *Server) internalAuthorized(r *http.Request) bool {
+	want := s.cfg.GatewayInternalSecret
+	if want == "" {
+		return true
+	}
+	got := r.Header.Get(internalAuthHeader)
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }
 
 func writeStreamError(w http.ResponseWriter, r *http.Request, e *tunnel.Error) {
