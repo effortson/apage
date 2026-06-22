@@ -11,7 +11,6 @@ var usageQuotaColumn = map[string]string{
 	"storage_bytes": "storage_bytes_used",
 	"tunnel_egress": "tunnel_egress_used",
 	"cloud_egress":  "cloud_egress_used",
-	"conversion":    "conversion_used",
 }
 
 // usageDailyColumn maps a metering dimension to its usage_daily column.
@@ -19,7 +18,6 @@ var usageDailyColumn = map[string]string{
 	"storage_bytes": "storage_bytes",
 	"tunnel_egress": "tunnel_egress",
 	"cloud_egress":  "cloud_egress",
-	"conversion":    "conversions",
 }
 
 // AddUsage applies a metering delta to the tenant's cumulative quota usage
@@ -53,7 +51,6 @@ type UsageDailyRow struct {
 	StorageBytes int64     `json:"storageBytes"`
 	TunnelEgress int64     `json:"tunnelEgress"`
 	CloudEgress  int64     `json:"cloudEgress"`
-	Conversions  int64     `json:"conversions"`
 }
 
 // ListUsageDaily returns the last `days` of usage rollups, oldest first (spec §29).
@@ -62,7 +59,7 @@ func (s *Store) ListUsageDaily(ctx context.Context, tenantID string, days int) (
 		days = 30
 	}
 	rows, err := s.Pool.Query(ctx,
-		`SELECT day, storage_bytes, tunnel_egress, cloud_egress, conversions
+		`SELECT day, storage_bytes, tunnel_egress, cloud_egress
 		 FROM usage_daily WHERE tenant_id=$1 AND day >= CURRENT_DATE - $2::int
 		 ORDER BY day ASC`, tenantID, days)
 	if err != nil {
@@ -72,7 +69,7 @@ func (s *Store) ListUsageDaily(ctx context.Context, tenantID string, days int) (
 	var out []UsageDailyRow
 	for rows.Next() {
 		var u UsageDailyRow
-		if err := rows.Scan(&u.Day, &u.StorageBytes, &u.TunnelEgress, &u.CloudEgress, &u.Conversions); err != nil {
+		if err := rows.Scan(&u.Day, &u.StorageBytes, &u.TunnelEgress, &u.CloudEgress); err != nil {
 			return nil, err
 		}
 		out = append(out, u)

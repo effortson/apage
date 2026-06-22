@@ -13,7 +13,6 @@ const (
 	FileUploaded         = "file.uploaded"
 	FileScanned          = "file.scanned"
 	FileRejected         = "file.rejected"
-	FileConverted        = "file.converted"
 	PreviewLinkCreated   = "preview_link.created"
 	PreviewLinkAccessed  = "preview_link.accessed"
 	PreviewLinkDenied    = "preview_link.denied"

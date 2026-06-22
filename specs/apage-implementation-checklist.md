@@ -248,12 +248,12 @@
 
 ## 阶段 P3 — V1 与生产化（§21 暂缓项 / §22.4 Phase 2–3）
 
-### P3.1 Office/高级转换（§13 V1） [B]
-- [ ] DOCX/PPTX/XLSX → LibreOffice 隔离容器转 PDF（§13 / §15）
+### P3.1 高级转换（§13 V1） [B]
+> **范围调整**：APAGE 为只读预览产品，不支持在浏览器内编辑 office；故 **office 文档转换(DOCX/PPTX/XLSX → LibreOffice)移出范围**,转换套件已移除。office 类型不接受上传(MIME 白名单拒绝)。
+- [x] ~~DOCX/PPTX/XLSX → LibreOffice 隔离容器转 PDF~~ —— **移出范围(仅浏览,不编辑 office)**
 - [ ] CSV 表格预览、Markdown→安全 HTML、代码 syntax highlight（§13）
-- [ ] 转换 worker 按队列长度扩容；转换失败不影响 tunnel preview（§19.3）
-- [ ] 审计 `file.converted`（§15）
-- [ ] 转换 ready SLO：PDF/image/text P95 ≤ 10s after upload（§18）
+- [x] ~~转换 worker / `file.converted` 审计~~ —— **移出范围(已删除转换套件)**
+- [ ] ready SLO：PDF/image/text P95 ≤ 10s after upload（§18）
 
 ### P3.2 自定义域名（§5 / §28） [B][F]
 - [ ] `POST/GET/DELETE /custom-domains` + `/verify`（§28）

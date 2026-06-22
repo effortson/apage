@@ -60,7 +60,7 @@
 
 ## P1 — 标称完成但实为 stub / 缺失
 
-> **进度(branch `fix/p0-security`)**:已修 **012 / 013 / 014 / 015 / 016 / 017 / 018 / 020**(✅),**019 / 022 部分**(🟡),并附带修 P2 的 [[APAGE-035]](lite 文件过期裁剪)。均通过 `go build`/`go vet`/`go test -race`(新增 agent range、gateway version、path size、billing 等测试 + migration 0002)。**010 背压(credit 流控)、011 registry 路由、023 DNS(CNAME+周期 recheck)亦已修**,并附带修 [[APAGE-033]](registry TTL)。**021 OAuth 亦已修**(config-gated 真实流程,配 provider 凭据即生效)。**仅剩 2 项需外部基建**:023 ACME 签发(需真实域名 + ACME client)、024 Office 转换(需 LibreOffice 容器)。
+> **进度(branch `fix/p0-security`)**:已修 **012 / 013 / 014 / 015 / 016 / 017 / 018 / 020**(✅),**019 / 022 部分**(🟡),并附带修 P2 的 [[APAGE-035]](lite 文件过期裁剪)。均通过 `go build`/`go vet`/`go test -race`(新增 agent range、gateway version、path size、billing 等测试 + migration 0002)。**010 背压(credit 流控)、011 registry 路由、023 DNS(CNAME+周期 recheck)亦已修**,并附带修 [[APAGE-033]](registry TTL)。**021 OAuth 亦已修**(config-gated 真实流程,配 provider 凭据即生效)。**024 Office 转换已移出范围**(产品决定:仅浏览、不支持浏览器编辑,移除转换套件)。**仅剩 1 项需外部基建**:023 ACME 签发(需真实域名 + ACME client)。
 
 ### APAGE-010 · Tunnel 背压是假的
 - **状态**:✅ 已修(credit 流控)。tunnel 协议加 `flow` 帧 + `FlowWindow=16`:agent 初始 16 credits,**仅在持有 credit 时才发 chunk**,gateway 每relay 一个 chunk 给访客就回 `flow(+1)`。数学上 dataCh 占用恒 ≤ window,gateway readLoop 永不阻塞(消除 head-of-line),内存有界,慢访客→agent 阻塞在 `awaitCredit`→停读磁盘(真背压)。**能力位 `flowControl` 兜底**:gateway 未授予时 agent 退化为自由发送,新/旧混部不会死锁。新增 `flow_test.go`(含 race)。
@@ -146,10 +146,8 @@
 - **证据**:`internal/api/domains.go:107-110`、`internal/api/health.go:32`
 - **修复**:接 ACME(autocert/lego)+ CNAME 校验 + 续期 worker。
 
-### APAGE-024 · Office 转换为 stub
-- **现状**:`handleConvert` 仅 `TODO(prod)` 注释 + 直接置 `ready`,无实际转换。(文档已标 🟡,列此跟踪)
-- **证据**:`internal/worker/worker.go:47-57`
-- **修复**:隔离容器跑 LibreOffice 生成 preview.pdf 再置 ready。
+### APAGE-024 · Office 转换 —— ❌ 移出范围(产品决定:仅浏览,不在浏览器编辑)
+- **状态**:✅ 已按决定处理(**不实现,移除桩代码**)。APAGE 定位只读预览、不支持在浏览器里编辑 office,故 LibreOffice 转换套件直接砍掉:删除 worker 的 `handleConvert`/`needsConversion`/`convert` 队列消费者/scan 的转换分支/转换计量,以及 quota 的 `conversion` 维度与 `/usage`、`/billing`、前端用量页/定价页里的 conversions 展示;`file.converted` 审计事件删除。office 类型本就不在上传白名单,继续 415 拒绝。DB 的 `conversion_*` / `usage_daily.conversions` 列保留为惰性(默认 0,不再读写),避免对已应用 migration 动刀。
 
 ---
 

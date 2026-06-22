@@ -13,10 +13,10 @@ var ErrNotFound = errors.New("not found")
 
 // Plan limit presets (spec §20).
 var planQuotas = map[string]Quota{
-	"lite":    {InstanceLimit: 1, StorageBytesLimit: 100 << 20, TunnelEgressLimit: 1 << 30, CloudEgressLimit: 1 << 30, ConversionLimit: 0, CustomDomainLimit: 0},
-	"starter": {InstanceLimit: 1, StorageBytesLimit: 1 << 30, TunnelEgressLimit: 10 << 30, CloudEgressLimit: 10 << 30, ConversionLimit: 100, CustomDomainLimit: 1},
-	"pro":     {InstanceLimit: 5, StorageBytesLimit: 50 << 30, TunnelEgressLimit: 100 << 30, CloudEgressLimit: 100 << 30, ConversionLimit: 1000, CustomDomainLimit: 5},
-	"team":    {InstanceLimit: 25, StorageBytesLimit: 500 << 30, TunnelEgressLimit: 1000 << 30, CloudEgressLimit: 1000 << 30, ConversionLimit: 10000, CustomDomainLimit: 25},
+	"lite":    {InstanceLimit: 1, StorageBytesLimit: 100 << 20, TunnelEgressLimit: 1 << 30, CloudEgressLimit: 1 << 30, CustomDomainLimit: 0},
+	"starter": {InstanceLimit: 1, StorageBytesLimit: 1 << 30, TunnelEgressLimit: 10 << 30, CloudEgressLimit: 10 << 30, CustomDomainLimit: 1},
+	"pro":     {InstanceLimit: 5, StorageBytesLimit: 50 << 30, TunnelEgressLimit: 100 << 30, CloudEgressLimit: 100 << 30, CustomDomainLimit: 5},
+	"team":    {InstanceLimit: 25, StorageBytesLimit: 500 << 30, TunnelEgressLimit: 1000 << 30, CloudEgressLimit: 1000 << 30, CustomDomainLimit: 25},
 }
 
 // PlanQuota returns the limit preset for a plan (defaults to lite).
@@ -54,10 +54,10 @@ func (s *Store) RegisterAccount(ctx context.Context, tenant Tenant, user User, m
 	q := PlanQuota(tenant.Plan)
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO quotas(tenant_id,plan,instance_limit,storage_bytes_limit,tunnel_egress_limit,
-			cloud_egress_limit,conversion_limit,custom_domain_limit)
-		 VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+			cloud_egress_limit,custom_domain_limit)
+		 VALUES($1,$2,$3,$4,$5,$6,$7)`,
 		tenant.TenantID, tenant.Plan, q.InstanceLimit, q.StorageBytesLimit, q.TunnelEgressLimit,
-		q.CloudEgressLimit, q.ConversionLimit, q.CustomDomainLimit); err != nil {
+		q.CloudEgressLimit, q.CustomDomainLimit); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -218,11 +218,11 @@ func (s *Store) QuotaFor(ctx context.Context, tenantID string) (*Quota, error) {
 	err := s.Pool.QueryRow(ctx,
 		`SELECT tenant_id,plan,instance_limit,storage_bytes_limit,storage_bytes_used,
 			tunnel_egress_limit,tunnel_egress_used,cloud_egress_limit,cloud_egress_used,
-			conversion_limit,conversion_used,custom_domain_limit,custom_domain_used,period_start
+			custom_domain_limit,custom_domain_used,period_start
 		 FROM quotas WHERE tenant_id=$1`, tenantID).
 		Scan(&q.TenantID, &q.Plan, &q.InstanceLimit, &q.StorageBytesLimit, &q.StorageBytesUsed,
 			&q.TunnelEgressLimit, &q.TunnelEgressUsed, &q.CloudEgressLimit, &q.CloudEgressUsed,
-			&q.ConversionLimit, &q.ConversionUsed, &q.CustomDomainLimit, &q.CustomDomainUsed, &q.PeriodStart)
+			&q.CustomDomainLimit, &q.CustomDomainUsed, &q.PeriodStart)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}

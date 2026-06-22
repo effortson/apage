@@ -9,7 +9,6 @@ const labels: Record<string, { name: string; bytes?: boolean }> = {
   storageBytes: { name: "Storage", bytes: true },
   tunnelEgress: { name: "Tunnel egress", bytes: true },
   cloudEgress: { name: "Cloud egress", bytes: true },
-  conversions: { name: "Conversions" },
   customDomains: { name: "Custom domains" },
 };
 
@@ -23,7 +22,7 @@ export default function Usage() {
       <h1 style={{ marginBottom: 16 }}>Usage &amp; Billing</h1>
       <Card title={<span>Current plan <Badge tone="info">{u.plan}</Badge></span>}>
         <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
-          Period {absoluteTime(u.periodStart)} → {absoluteTime(u.periodEnd)}. Tunnel billed by instances/traffic/domains; Cloud by storage/download/conversions/retention. Lite prompts an upgrade past limits and never auto-bills.
+          Period {absoluteTime(u.periodStart)} → {absoluteTime(u.periodEnd)}. Tunnel billed by instances/traffic/domains; Cloud by storage/download/retention. Lite prompts an upgrade past limits and never auto-bills.
         </p>
       </Card>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 16, marginTop: 16 }}>

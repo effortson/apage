@@ -27,7 +27,7 @@ export default function Admin() {
         <Card title="Tenants">Plan / trust level / quota / suspend-resume / freeze. Cross-tenant queries are audited; file contents are never shown (metadata only).</Card>
         <Card title="Abuse & takedown">Queue by source (report / scanner / blacklist), severity, SLA. Tiered actions: freeze link → instance → tenant → ban. CSAM follows legal reporting.</Card>
         <Card title="System health">Component status, per-gateway connections/streams/egress, queue depths, storage delete backlog, capacity vs scale thresholds.</Card>
-        <Card title="SLO panel">Preview API availability, tunnel first-byte P95, revoke effectiveness, converter queue latency.</Card>
+        <Card title="SLO panel">Preview API availability, tunnel first-byte P95, revoke effectiveness, scanner queue latency.</Card>
         <Card title="Global audit">Cross-tenant search; admin-action audit is independently traceable; 90-day retention (compliance-adjustable).</Card>
         <Card title="Domains & certs">Verification + ACME issuance/renewal ops; render-domain reputation monitoring (Safe Browsing / blacklist).</Card>
       </div>

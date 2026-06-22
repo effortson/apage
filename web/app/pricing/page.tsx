@@ -14,7 +14,7 @@ export default function Pricing() {
       <Link href="/">← Home</Link>
       <h1 style={{ textAlign: "center", margin: "24px 0" }}>Pricing</h1>
       <p style={{ textAlign: "center", color: "var(--color-text-muted)", marginBottom: 32 }}>
-        Tunnel billed by instances / forwarded traffic / domains. Cloud billed by storage / download / conversions / retention.
+        Tunnel billed by instances / forwarded traffic / domains. Cloud billed by storage / download / retention.
       </p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 16 }}>
         {plans.map((p) => (

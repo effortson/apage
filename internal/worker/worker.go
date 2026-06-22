@@ -40,7 +40,6 @@ func New(db *store.Store, rdb *redisx.Client, obj ObjectStore, log *slog.Logger)
 // Run starts the queue consumers and sweep loop until ctx is cancelled.
 func (w *Worker) Run(ctx context.Context) {
 	go w.consume(ctx, "scan", w.handleScan)
-	go w.consume(ctx, "convert", w.handleConvert)
 	go w.consume(ctx, "delete", w.handleDelete)
 	go w.consume(ctx, "audit", w.handleAudit)
 	go w.sweepLoop(ctx)
@@ -139,24 +138,6 @@ func (w *Worker) handleAudit(ctx context.Context, payload string) {
 	}
 }
 
-// handleConvert is the office-to-PDF conversion stage (spec §13 V1). The
-// production worker runs LibreOffice in an isolated container and writes a
-// preview.pdf derivative; this MVP stub marks the file ready so the pipeline is
-// observable end-to-end. Conversion failure never affects tunnel preview.
-func (w *Worker) handleConvert(ctx context.Context, fileID string) {
-	f, err := w.db.FileByIDAny(ctx, fileID)
-	if err != nil || f.Status == "deleted" || f.Status == "expired" {
-		return
-	}
-	// TODO(prod): invoke LibreOffice in an isolated container, upload preview.pdf.
-	_ = w.db.SetFileStatus(ctx, fileID, "ready", "ready", "")
-	_ = w.db.AddUsage(ctx, f.TenantID, "conversion", 1)      // meter conversions (spec §29)
-	_ = w.db.AddUsageDaily(ctx, f.TenantID, "conversion", 1) // daily rollup
-	_ = w.db.WriteAudit(ctx, audit.Entry{TenantID: f.TenantID, InstanceID: f.InstanceID,
-		Event: audit.FileConverted, ActorType: audit.ActorSystem, ResourceType: "file", ResourceID: fileID})
-	w.log.Info("file converted (stub)", "file", fileID)
-}
-
 func (w *Worker) consume(ctx context.Context, queue string, fn func(context.Context, string)) {
 	for ctx.Err() == nil {
 		payload, err := w.rdb.Dequeue(ctx, queue, 5*time.Second)
@@ -200,13 +181,9 @@ func (w *Worker) handleScan(ctx context.Context, fileID string) {
 	_ = w.db.WriteAudit(ctx, audit.Entry{TenantID: f.TenantID, InstanceID: f.InstanceID,
 		Event: audit.FileScanned, ActorType: audit.ActorSystem, ResourceType: "file", ResourceID: fileID})
 
-	// MVP preview types (PDF/image/text) are ready directly; office types would
-	// enqueue a conversion job here (V1, spec §13).
-	if needsConversion(f.MimeType) {
-		_ = w.db.SetFileStatus(ctx, fileID, "converting", "pending", "")
-		_ = w.rdb.Enqueue(ctx, "convert", fileID)
-		return
-	}
+	// APAGE is view-only: supported preview types (PDF/image/text) become ready
+	// directly. Office documents are not converted or editable; they are simply
+	// not an accepted upload type (rejected at the MIME allowlist).
 	_ = w.db.SetFileStatus(ctx, fileID, "ready", "ready", "")
 	w.log.Info("file ready", "file", fileID, "mime", f.MimeType)
 }
@@ -333,12 +310,3 @@ func scan(f *store.File) verdict {
 	return verdict{true, ""}
 }
 
-func needsConversion(mime string) bool {
-	switch mime {
-	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-		"application/vnd.openxmlformats-officedocument.presentationml.presentation",
-		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-		return true
-	}
-	return false
-}

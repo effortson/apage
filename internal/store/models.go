@@ -46,8 +46,6 @@ type Quota struct {
 	TunnelEgressUsed  int64     `json:"tunnelEgressUsed"`
 	CloudEgressLimit  int64     `json:"cloudEgressLimit"`
 	CloudEgressUsed   int64     `json:"cloudEgressUsed"`
-	ConversionLimit   int       `json:"conversionLimit"`
-	ConversionUsed    int       `json:"conversionUsed"`
 	CustomDomainLimit int       `json:"customDomainLimit"`
 	CustomDomainUsed  int       `json:"customDomainUsed"`
 	PeriodStart       time.Time `json:"periodStart"`

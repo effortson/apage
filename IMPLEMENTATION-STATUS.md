@@ -51,10 +51,10 @@ point) · ⬜ deferred production-hardening (spec §21 defers these).
 - ✅ Custom domains (§28): CRUD + TXT verify (live DNS lookup); 🟡 ACME issuance is `TODO(prod)`
 - ✅ Abuse report endpoint (§30/§15.5) + audit + queue; 🟡 admin processing/freeze workflow partial
 - ✅ Compliance data deletion (§15.6); region residency is config-level
-- 🟡 Office conversion (§13): convert-queue consumer stub marks ready; LibreOffice container is `TODO(prod)`
+- ❌ Office conversion (§13): **out of scope** — APAGE is view-only (no in-browser editing); office documents are not converted or accepted (rejected at the MIME allowlist)
 - 🟡 Admin console (§8): frontend shell + documented surfaces; ⬜ platform SSO+MFA auth, live wiring (spec §21: admin post-MVP)
 
 ## Deferred (spec §21 "暂缓" / external services)
 - ⬜ Admin SSO + MFA platform auth, network isolation
-- ⬜ Real ClamAV, LibreOffice converter container, ACME automation, Safe Browsing/URLhaus
+- ⬜ Real ClamAV, ACME automation, Safe Browsing/URLhaus (LibreOffice converter removed — view-only product)
 - ⬜ Multi-region active-active, CloudFront, ECS/Fargate migration (Phase 2/3, §22.4)

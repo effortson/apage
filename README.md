@@ -11,7 +11,7 @@ and [`specs/apage-ui-spec.md`](specs/apage-ui-spec.md); implementation plan in
 ```
 apage-api      REST control plane + data plane + visitor runtime (/p, /f)
 apage-gateway  WebSocket tunnel: agent sessions, stream routing, backpressure
-apage-worker   async scan / convert / expiry-sweep / object-delete
+apage-worker   async scan / expiry-sweep / object-delete / usage-flush / domain-recheck
 apage-agent    customer-side: allowlist, path validation, local register, tunnel client
 web            Next.js frontend: marketing, auth, console, admin shell
 ```
@@ -174,9 +174,11 @@ go test -run TestResolvePath ./internal/agent -v
 
 See [`IMPLEMENTATION-STATUS.md`](IMPLEMENTATION-STATUS.md) for the full mapping.
 MVP-0, MVP-1, and most V1 control-plane surfaces are implemented and verified
-end-to-end. Items requiring external services (real ClamAV, LibreOffice
-conversion, ACME automation, Safe Browsing, admin SSO/MFA) are stubbed with
-clear `TODO(prod)` markers and documented integration points.
+end-to-end. Items requiring external services (real ClamAV, ACME automation,
+Safe Browsing, admin SSO/MFA) are stubbed with clear `TODO(prod)` markers and
+documented integration points. Office conversion is intentionally out of scope:
+APAGE is view-only (no in-browser editing), so office documents are not
+converted or accepted.
 
 ## Tests
 

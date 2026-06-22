@@ -29,7 +29,6 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 			"storageBytes":  metric(q.StorageBytesUsed, q.StorageBytesLimit),
 			"tunnelEgress":  metric(q.TunnelEgressUsed, q.TunnelEgressLimit),
 			"cloudEgress":   metric(q.CloudEgressUsed, q.CloudEgressLimit),
-			"conversions":   metric(int64(q.ConversionUsed), int64(q.ConversionLimit)),
 			"customDomains": metric(int64(q.CustomDomainUsed), int64(q.CustomDomainLimit)),
 		},
 	})
@@ -97,7 +96,6 @@ func (s *Server) handleBilling(w http.ResponseWriter, r *http.Request) {
 			"storageBytes": metric(q.StorageBytesUsed, q.StorageBytesLimit),
 			"tunnelEgress": metric(q.TunnelEgressUsed, q.TunnelEgressLimit),
 			"cloudEgress":  metric(q.CloudEgressUsed, q.CloudEgressLimit),
-			"conversions":  metric(int64(q.ConversionUsed), int64(q.ConversionLimit)),
 		},
 		"upgradeOptions": planUpgrades(q.Plan),
 		// Over-quota prompts an upgrade and never silently charges (spec §2/§20).
